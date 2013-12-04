@@ -1,4 +1,4 @@
-aegisthus
+Aegisthus
 =========
 
 A Bulk Data Pipeline out of Cassandra.  Aegisthus implements a reader for the 
@@ -6,19 +6,19 @@ SSTable format and provides a map/reduce program to create a compacted snapshot
 of the data contained in a column family.
 
 BUILDING
-=========
+--------
 
 aegisthus is built via Gradle (http://www.gradle.org). To build from the command line:
     ./gradlew build
 
 RUNNING
-=========
+--------
 
 Please [see the wiki](https://github.com/Netflix/aegisthus/wiki) or checkout the scripts
 directory to use our sstable2json wrapper for individual sstables.
 
 LICENSE
-=========
+--------
 
 Copyright 2013 Netflix, Inc.
 
