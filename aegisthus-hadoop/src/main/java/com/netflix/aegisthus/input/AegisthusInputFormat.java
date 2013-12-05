@@ -54,7 +54,8 @@ import com.netflix.aegisthus.io.sstable.SSTableScanner;
  */
 public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 	private static final Log LOG = LogFactory.getLog(AegisthusInputFormat.class);
-	public static final String COLUMN_TYPE = "sstable.columntype";
+	public static final String COLUMN_TYPE = "aegisthus.columntype";
+	public static final String KEY_TYPE = "aegisthus.keytype";
 	@SuppressWarnings("rawtypes")
 	protected Map<String, AbstractType> convertors;
 
@@ -78,18 +79,28 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 
 	@SuppressWarnings("rawtypes")
 	private Map<String, AbstractType> initConvertors(JobContext job) throws IOException {
-		String conversion = job.getConfiguration().get(COLUMN_TYPE);
+		Map<String, AbstractType> convertors = Maps.newHashMap();
+		String conversion = job.getConfiguration().get(KEY_TYPE);
+		LOG.info(KEY_TYPE + ": " + conversion);
+		if (conversion != null) {
+			try {
+				convertors.put(SSTableScanner.KEY, TypeParser.parse(conversion));
+			} catch (ConfigurationException e) {
+				throw new IOException(e);
+			}
+		}
+		conversion = job.getConfiguration().get(COLUMN_TYPE);
 		LOG.info(COLUMN_TYPE + ": " + conversion);
-		if (conversion == null) {
-			return null;
+		if (conversion != null) {
+			try {
+				convertors.put(SSTableScanner.COLUMN_NAME_KEY, TypeParser.parse(conversion));
+			} catch (ConfigurationException e) {
+				throw new IOException(e);
+			}
 		}
 
-		Map<String, AbstractType> convertors = Maps.newHashMap();
-
-		try {
-			convertors.put(SSTableScanner.COLUMN_NAME_KEY, TypeParser.parse(conversion));
-		} catch (ConfigurationException e) {
-			throw new IOException(e);
+		if (convertors.size() == 0) {
+			return null;
 		}
 		return convertors;
 	}

@@ -148,14 +148,47 @@ public class AegisthusLoader extends PigStorage implements LoadMetadata {
 		return fs;
 	}
 
+	protected ResourceFieldSchema subfield(String name, byte type, ResourceSchema schema) throws IOException {
+		ResourceFieldSchema fs = new ResourceFieldSchema();
+		fs.setName(name);
+		fs.setType(type);
+		fs.setSchema(schema);
+		return fs;
+	}
+
+	protected ResourceSchema columnSchema() throws IOException {
+		ResourceSchema schema = new ResourceSchema();
+		List<ResourceFieldSchema> fields = new ArrayList<ResourceSchema.ResourceFieldSchema>();
+
+		fields.add(field("name", DataType.BYTEARRAY));
+		fields.add(field("value", DataType.BYTEARRAY));
+		fields.add(field("ts", DataType.LONG));
+		fields.add(field("status", DataType.CHARARRAY));
+		fields.add(field("ttl", DataType.LONG));
+
+		ResourceSchema tuple = new ResourceSchema();
+		tuple.setFields(fields.toArray(new ResourceFieldSchema[0]));
+
+		ResourceFieldSchema fs = new ResourceFieldSchema();
+		fs.setName("column");
+		fs.setType(DataType.TUPLE);
+
+		fs.setSchema(tuple);
+		fields.clear();
+		fields.add(fs);
+		schema.setFields(fields.toArray(new ResourceFieldSchema[0]));
+
+		return schema;
+	}
+
 	@Override
 	public ResourceSchema getSchema(String location, Job job) throws IOException {
 		ResourceSchema resourceSchema = new ResourceSchema();
 		List<ResourceFieldSchema> fields = new ArrayList<ResourceSchema.ResourceFieldSchema>();
 		fields.add(field("key", DataType.BYTEARRAY));
 		fields.add(field("deletedat", DataType.LONG));
-		fields.add(field("map_columns", DataType.MAP));
-		fields.add(field("bag_columns", DataType.BAG));
+		fields.add(subfield("map_columns", DataType.MAP, columnSchema()));
+		fields.add(subfield("bag_columns", DataType.BAG, columnSchema()));
 		resourceSchema.setFields(fields.toArray(new ResourceFieldSchema[0]));
 		return resourceSchema;
 	}
