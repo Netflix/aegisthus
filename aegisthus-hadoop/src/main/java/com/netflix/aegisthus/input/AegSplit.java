@@ -26,8 +26,6 @@ import java.util.Map;
 import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -42,8 +40,6 @@ import com.netflix.aegisthus.io.sstable.compression.CompressionMetadata;
 
 @SuppressWarnings("rawtypes")
 public class AegSplit extends InputSplit implements Writable {
-	private static final Log LOG = LogFactory.getLog(AegSplit.class);
-
 	public enum Type {
 		commitlog, json, sstable
 	}
@@ -77,7 +73,6 @@ public class AegSplit extends InputSplit implements Writable {
 		this.path = path;
 		this.start = start;
 		this.end = length + start;
-		LOG.info(String.format("start: %d, end: %d", start, end));
 		this.hosts = hosts;
 		this.convertors = convertors;
 	}
@@ -87,7 +82,6 @@ public class AegSplit extends InputSplit implements Writable {
 		this.path = path;
 		this.start = start;
 		this.end = length + start;
-		LOG.info(String.format("start: %d, end: %d", start, end));
 		this.hosts = hosts;
 		this.convertors = convertors;
 	}
@@ -97,7 +91,6 @@ public class AegSplit extends InputSplit implements Writable {
 		this.path = path;
 		this.start = start;
 		this.end = length + start;
-		LOG.info(String.format("start: %d, end: %d", start, end));
 		this.hosts = hosts;
 	}
 
@@ -162,8 +155,8 @@ public class AegSplit extends InputSplit implements Writable {
 		}
 		start = in.readLong();
 		type = WritableUtils.readEnum(in, Type.class);
+		int size = in.readInt();
 		if (type == Type.sstable) {
-			int size = in.readInt();
 			convertors = Maps.newHashMap();
 			for (int i = 0; i < size; i++) {
 				String[] parts = WritableUtils.readStringArray(in);
@@ -195,6 +188,8 @@ public class AegSplit extends InputSplit implements Writable {
 				parts[1] = e.getValue().toString();
 				WritableUtils.writeStringArray(out, parts);
 			}
+		} else {
+			out.writeInt(0);
 		}
 	}
 
