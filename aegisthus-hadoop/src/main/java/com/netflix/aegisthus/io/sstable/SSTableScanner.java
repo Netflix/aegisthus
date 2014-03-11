@@ -30,8 +30,11 @@ import org.apache.cassandra.db.CounterColumn;
 import org.apache.cassandra.db.DeletedColumn;
 import org.apache.cassandra.db.ExpiringColumn;
 import org.apache.cassandra.db.IColumn;
+import org.apache.cassandra.db.OnDiskAtom;
+import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.io.sstable.Descriptor;
 
 import com.google.common.collect.Maps;
 
@@ -56,19 +59,20 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 
 	private Map<String, AbstractType> converters = Maps.newHashMap();
 	private AbstractType keyConvertor = null;
-	private boolean promotedIndex = true;
-	private final ColumnSerializer serializer = new ColumnSerializer();
-	public SSTableScanner(DataInput input, boolean promotedIndex) {
-		this(input, null, -1, promotedIndex);
+	private Descriptor.Version version = null;
+	private final OnDiskAtom.Serializer serializer = new OnDiskAtom.Serializer(new ColumnSerializer());
+
+	public SSTableScanner(DataInput input, Descriptor.Version version) {
+		this(input, null, -1, version);
 	}
 
-	public SSTableScanner(DataInput input, Map<String, AbstractType> converters, boolean promotedIndex) {
-		this(input, converters, -1, promotedIndex);
+	public SSTableScanner(DataInput input, Map<String, AbstractType> converters, Descriptor.Version version) {
+		this(input, converters, -1, version);
 	}
 
-	public SSTableScanner(DataInput input, Map<String, AbstractType> converters, long end, boolean promotedIndex) {
+	public SSTableScanner(DataInput input, Map<String, AbstractType> converters, long end, Descriptor.Version version) {
 		init(input, converters, end);
-		this.promotedIndex = promotedIndex;
+		this.version = version;
 	}
 
 	public SSTableScanner(String filename) {
@@ -89,9 +93,8 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 
 	public SSTableScanner(String filename, Map<String, AbstractType> converters, long start, long end) {
 		try {
-			this.promotedIndex = filename.matches(".*/[^/]+-ib-[^/]+$");
-			init(	new DataInputStream(new BufferedInputStream(new FileInputStream(filename), 65536 * 10)),
-					converters,
+			this.version = Descriptor.fromFilename(filename).version;
+			init(new DataInputStream(new BufferedInputStream(new FileInputStream(filename), 65536 * 10)), converters,
 					end);
 			if (start != 0) {
 				skipUnsafe(start);
@@ -169,7 +172,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			String key = keyConvertor.getString(ByteBuffer.wrap(b));
 			datasize = input.readLong() + keysize + 2 + 8;
 			this.pos += datasize;
-			if (!promotedIndex) {
+			if (!version.hasPromotedIndexes) {
 				if (input instanceof DataInputStream) {
 					// skip bloom filter
 					skip(input.readInt());
@@ -219,38 +222,56 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 	public void serializeColumns(StringBuilder sb, int count, DataInput columns) throws IOException {
 		for (int i = 0; i < count; i++) {
 			// serialize columns
-			IColumn column = serializer.deserialize(columns);
-			String cn = columnNameConvertor
-					.getString(column.name())
-					.replaceAll("[\\s\\p{Cntrl}]", " ")
-					.replace("\\", "\\\\");
-			sb.append("[\"");
-			sb.append(cn);
-			sb.append("\", \"");
-			sb.append(getConvertor(cn).getString(column.value()));
-			sb.append("\", ");
-			sb.append(column.timestamp());
+			OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
+			if (atom instanceof IColumn) {
+				IColumn column = (IColumn) atom;
+				String cn = convertColumnName(column.name());
+				sb.append("[\"");
+				sb.append(cn);
+				sb.append("\", \"");
+				sb.append(getConvertor(cn).getString(column.value()));
+				sb.append("\", ");
+				sb.append(column.timestamp());
 
-			if (column instanceof DeletedColumn) {
-				sb.append(", ");
-				sb.append("\"d\"");
-			} else if (column instanceof ExpiringColumn) {
-				sb.append(", ");
-				sb.append("\"e\"");
-				sb.append(", ");
-				sb.append(((ExpiringColumn) column).getTimeToLive());
-				sb.append(", ");
-				sb.append(column.getLocalDeletionTime());
-			} else if (column instanceof CounterColumn) {
-				sb.append(", ");
-				sb.append("\"c\"");
-				sb.append(", ");
-				sb.append(((CounterColumn) column).timestampOfLastDelete());
-			}
-			sb.append("]");
-			if (i < count - 1) {
-				sb.append(", ");
+				if (column instanceof DeletedColumn) {
+					sb.append(", ");
+					sb.append("\"d\"");
+				} else if (column instanceof ExpiringColumn) {
+					sb.append(", ");
+					sb.append("\"e\"");
+					sb.append(", ");
+					sb.append(((ExpiringColumn) column).getTimeToLive());
+					sb.append(", ");
+					sb.append(column.getLocalDeletionTime());
+				} else if (column instanceof CounterColumn) {
+					sb.append(", ");
+					sb.append("\"c\"");
+					sb.append(", ");
+					sb.append(((CounterColumn) column).timestampOfLastDelete());
+				}
+				sb.append("]");
+				if (i < count - 1) {
+					sb.append(", ");
+				}
+			} else if (atom instanceof RangeTombstone) {
+				// RangeTombstones need to be held so that we can handle them
+				// during reduce. Currently aegisthus doesn't handle this well as we
+				// aren't handling columns in the order they should be sorted. We will
+				// have to change that in the near future.
+				/*
+				 * RangeTombstone rt = (RangeTombstone) atom; sb.append("[\"");
+				 * sb.append(convertColumnName(rt.name())); sb.append("\", \"");
+				 * sb.append(convertColumnName(rt.min)); sb.append("\", ");
+				 * sb.append(rt.data.markedForDeleteAt); sb.append(", \"");
+				 * sb.append(convertColumnName(rt.max)); sb.append("\"]");
+				 */
+			} else {
+				throw new IOException("column unexpected type");
 			}
 		}
+	}
+
+	private String convertColumnName(ByteBuffer bb) {
+		return columnNameConvertor.getString(bb).replaceAll("[\\s\\p{Cntrl}]", " ").replace("\\", "\\\\");
 	}
 }

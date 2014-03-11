@@ -26,6 +26,7 @@ import java.util.Map;
 import org.apache.cassandra.db.ColumnFamily;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FastByteArrayInputStream;
 import org.apache.cassandra.utils.ByteBufferUtil;
 
@@ -40,8 +41,8 @@ public class CommitLogScanner extends SSTableScanner {
 	protected StringBuilder sb;
 
 	@SuppressWarnings("rawtypes")
-	public CommitLogScanner(DataInput di, Map<String, AbstractType> convertors) {
-		super(di, convertors, -1, true);
+	public CommitLogScanner(DataInput di, Map<String, AbstractType> convertors, Descriptor.Version version) {
+		super(di, convertors, -1, version);
 		cache = Lists.newLinkedList();
 	}
 
