@@ -19,6 +19,7 @@ import java.io.DataInputStream;
 import java.io.IOError;
 import java.io.IOException;
 
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.mapreduce.InputSplit;
@@ -54,13 +55,11 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		LOG.info("Start: " + start);
 		LOG.info("End: " + end);
 
-		//TODO: should switch over to Cassandra's mechanism
-		boolean promotedIndex = filename.matches("/[^/]+-ib-[^/]+$");
 		try {
 			scanner = new SSTableScanner(	new DataInputStream(split.getInput(ctx.getConfiguration())),
 											split.getConvertors(),
 											end,
-											promotedIndex);
+											Descriptor.fromFilename(filename).version);
 			scanner.skipUnsafe(start);
 			this.pos = start;
 		} catch (IOException e) {

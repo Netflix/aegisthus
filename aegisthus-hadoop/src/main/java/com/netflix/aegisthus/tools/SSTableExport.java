@@ -26,9 +26,11 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
-import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.HelpFormatter;
@@ -53,6 +55,7 @@ public class SSTableExport {
 	private static final String ROWSIZE = "r";
 	private static final String COLUMN_NAME_TYPE = "c";
 	private static final String OPT_COMP = "comp";
+	private static final String OPT_VERSION = "v";
 
 	static {
 		options.addOption(new Option(ROWSIZE, false, "Output row sizes"));
@@ -63,11 +66,14 @@ public class SSTableExport {
 		optCompression.setArgs(1);
 		options.addOption(optCompression);
 
-		Option optColumnNameType = new Option(	COLUMN_NAME_TYPE,
-												true,
-												"String indicating columns name types (AsciiType)");
+		Option optColumnNameType = new Option(COLUMN_NAME_TYPE, true,
+				"String indicating columns name types (AsciiType)");
 		optColumnNameType.setArgs(1);
 		options.addOption(optColumnNameType);
+
+		Option optVersion = new Option(OPT_VERSION, true, "file version (e.g ic or hf)");
+		optVersion.setArgs(1);
+		options.addOption(optVersion);
 
 		Option optEnd = new Option(END, true, "Output row sizes");
 		optEnd.setArgs(1);
@@ -118,8 +124,8 @@ public class SSTableExport {
 		export(new SSTableSplitScanner(ssTableFile), true);
 	}
 
-	public static void exportStream() throws IOException {
-		export(new SSTableScanner(new DataInputStream(System.in), true));
+	public static void exportStream(Descriptor.Version version) throws IOException {
+		export(new SSTableScanner(new DataInputStream(System.in), version));
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -151,7 +157,16 @@ public class SSTableExport {
 				HelpFormatter formatter = new HelpFormatter();
 				formatter.printHelp(usage, options);
 				System.exit(1);
+			} catch (SyntaxException e) {
+				System.err.println(e.getMessage());
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.printHelp(usage, options);
+				System.exit(1);
 			}
+		}
+		Descriptor.Version version = null;
+		if (cmd.hasOption(OPT_VERSION)) {
+			version = new Descriptor.Version(cmd.getOptionValue(OPT_VERSION));
 		}
 
 		if (cmd.hasOption(INDEX_SPLIT)) {
@@ -172,27 +187,32 @@ public class SSTableExport {
 			String ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 			exportRowSize(ssTableFileName);
 		} else if ("-".equals(cmd.getArgs()[0])) {
-			exportStream();
+			if (version == null) {
+				System.err.println("when streaming must supply file version");
+				HelpFormatter formatter = new HelpFormatter();
+				formatter.printHelp(usage, options);
+				System.exit(1);
+			}
+			exportStream(version);
 		} else {
 			String ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 			FileInputStream fis = new FileInputStream(ssTableFileName);
 			InputStream inputStream = new DataInputStream(new BufferedInputStream(fis, 65536 * 10));
 			if (cmd.hasOption(OPT_COMP)) {
-				CompressionMetadata cm = new CompressionMetadata(	new BufferedInputStream(new FileInputStream(cmd.getOptionValue(OPT_COMP)),
-																							65536),
-																	fis.getChannel().size());
+				CompressionMetadata cm = new CompressionMetadata(new BufferedInputStream(new FileInputStream(
+						cmd.getOptionValue(OPT_COMP)), 65536), fis.getChannel().size());
 				inputStream = new CompressionInputStream(inputStream, cm);
 
 			}
 			DataInputStream input = new DataInputStream(inputStream);
-			//TODO: should switch over to Cassandra's mechanism
-			boolean promotedIndex = ssTableFileName.matches(".*/[^/]+-ib-[^/]+$");
-
+			if (version == null) {
+				version = Descriptor.fromFilename(ssTableFileName).version;
+			}
 			if (cmd.hasOption(END)) {
 				long end = Long.valueOf(cmd.getOptionValue(END));
-				export(new SSTableScanner(input, convertors, end, promotedIndex));
+				export(new SSTableScanner(input, convertors, end, version));
 			} else {
-				export(new SSTableScanner(input, convertors, promotedIndex));
+				export(new SSTableScanner(input, convertors, version));
 			}
 		}
 	}

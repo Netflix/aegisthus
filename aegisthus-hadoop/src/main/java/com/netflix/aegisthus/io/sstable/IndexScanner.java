@@ -63,7 +63,7 @@ public class IndexScanner implements Iterator<Pair<String, Long>>{
 		try {
 			String key = BytesType.instance.getString(ByteBufferUtil.readWithShortLength(input));
 			Long offset = input.readLong();
-			return new Pair<String, Long>(key, offset);
+			return Pair.create(key, offset);
 		} catch (IOException e) {
 			throw new IOError(e);
 		}

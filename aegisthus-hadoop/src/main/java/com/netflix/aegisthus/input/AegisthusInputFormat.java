@@ -22,9 +22,10 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.cassandra.config.ConfigurationException;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.BlockLocation;
@@ -87,7 +88,9 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 				convertors.put(SSTableScanner.KEY, TypeParser.parse(conversion));
 			} catch (ConfigurationException e) {
 				throw new IOException(e);
-			}
+			} catch (SyntaxException e) {
+				throw new IOException(e);
+            }
 		}
 		conversion = job.getConfiguration().get(COLUMN_TYPE);
 		LOG.info(COLUMN_TYPE + ": " + conversion);
@@ -96,7 +99,9 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 				convertors.put(SSTableScanner.COLUMN_NAME_KEY, TypeParser.parse(conversion));
 			} catch (ConfigurationException e) {
 				throw new IOException(e);
-			}
+			} catch (SyntaxException e) {
+				throw new IOException(e);
+            }
 		}
 
 		if (convertors.size() == 0) {
