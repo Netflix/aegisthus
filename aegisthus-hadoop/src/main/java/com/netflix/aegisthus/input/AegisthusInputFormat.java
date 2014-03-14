@@ -43,6 +43,7 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.netflix.aegisthus.input.AegSplit.Type;
+import com.netflix.aegisthus.input.readers.CombineSSTableReader;
 import com.netflix.aegisthus.input.readers.CommitLogRecordReader;
 import com.netflix.aegisthus.input.readers.JsonRecordReader;
 import com.netflix.aegisthus.input.readers.SSTableRecordReader;
@@ -62,7 +63,11 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 
 	@Override
 	public RecordReader<Text, Text> createRecordReader(InputSplit inputSplit, TaskAttemptContext context) {
-		AegSplit split = (AegSplit) inputSplit;
+		AegSplit split = null;
+		if (inputSplit instanceof AegCombinedSplit) {
+			return new CombineSSTableReader();
+		}
+		split = (AegSplit) inputSplit;
 		RecordReader<Text, Text> reader = null;
 		switch (split.getType()) {
 		case json:
@@ -111,8 +116,9 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 	}
 
 	/**
-	 * The main thing that the addSSTableSplit handles is to split SSTables using their index if available.
-	 * The general algorithm is that if the file is large than the blocksize plus some fuzzy factor to 
+	 * The main thing that the addSSTableSplit handles is to split SSTables
+	 * using their index if available. The general algorithm is that if the file
+	 * is large than the blocksize plus some fuzzy factor to
 	 */
 	public void addSSTableSplit(List<InputSplit> splits, JobContext job, FileStatus file) throws IOException {
 		Path path = file.getPath();

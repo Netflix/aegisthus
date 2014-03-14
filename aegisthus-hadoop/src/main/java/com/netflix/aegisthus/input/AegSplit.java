@@ -163,8 +163,8 @@ public class AegSplit extends InputSplit implements Writable {
 		}
 		start = in.readLong();
 		type = WritableUtils.readEnum(in, Type.class);
+		int size = in.readInt();
 		if (type == Type.sstable) {
-			int size = in.readInt();
 			convertors = Maps.newHashMap();
 			for (int i = 0; i < size; i++) {
 				String[] parts = WritableUtils.readStringArray(in);
@@ -198,6 +198,8 @@ public class AegSplit extends InputSplit implements Writable {
 				parts[1] = e.getValue().toString();
 				WritableUtils.writeStringArray(out, parts);
 			}
+		} else {
+			out.writeInt(0);
 		}
 	}
 
