@@ -37,9 +37,11 @@ project(':aegisthus-core') {
     apply plugin: 'eclipse'
     dependencies {
         includeInJar 'com.google.guava:guava:12.0'
+        includeInJar 'com.fasterxml.jackson.core:jackson-core:2.1.4'
+        includeInJar 'com.fasterxml.jackson.core:jackson-annotations:2.1.4'
+        includeInJar 'com.fasterxml.jackson.core:jackson-databind:2.1.4'
         compile 'org.apache.pig:pig:0.11.1'
         compile 'org.slf4j:slf4j-api:1.6.3'
-        compile 'org.codehaus.jackson:jackson-mapper-asl:1.8.9'
         compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
         configurations.compile.extendsFrom(configurations.includeInJar)
     }
@@ -53,8 +55,12 @@ project(':aegisthus-hadoop') {
     apply plugin: 'eclipse'
 
     dependencies {
+        configurations.includeInJar {
+            transitive = false
+        }
         includeInJar project(':aegisthus-core')
         includeInJar 'org.apache.cassandra:cassandra-all:1.2.15'
+
 
         compile 'org.slf4j:slf4j-api:1.6.3'
         compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')

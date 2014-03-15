@@ -22,11 +22,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.pig.data.DataByteArray;
-import org.codehaus.jackson.JsonFactory;
-import org.codehaus.jackson.JsonParser;
-import org.codehaus.jackson.JsonToken;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 
 /**
  * Read and write Aegisthus Json format.
@@ -39,7 +40,6 @@ public class AegisthusSerializer {
 
 	static {
 		jsonFactory.configure(JsonParser.Feature.ALLOW_UNQUOTED_CONTROL_CHARS, true);
-		jsonFactory.configure(JsonParser.Feature.INTERN_FIELD_NAMES, false);
 	}
 
 	public Object type(String value) {
