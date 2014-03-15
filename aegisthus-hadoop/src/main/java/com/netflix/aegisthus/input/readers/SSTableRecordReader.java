@@ -60,16 +60,17 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		LOG.info("Start: " + start);
 		LOG.info("End: " + end);
 		if (ctx instanceof TaskInputOutputContext) {
-			context = (TaskInputOutputContext)ctx;
+			context = (TaskInputOutputContext) ctx;
 		}
 
 		try {
-			scanner = new SSTableScanner(	new DataInputStream(split.getInput(ctx.getConfiguration())),
-											split.getConvertors(),
-											end,
-											Descriptor.fromFilename(filename).version);
-			scanner.setMaxColSize(ctx.getConfiguration().getLong("aegisthus.maxcolsize", 0L));
-			LOG.info(String.format("aegisthus.maxcolsize - %d",ctx.getConfiguration().getLong("aegisthus.maxcolsize", 0L)) );
+			scanner = new SSTableScanner(new DataInputStream(split.getInput(ctx.getConfiguration())),
+					split.getConvertors(), end, Descriptor.fromFilename(filename).version);
+			if (ctx.getConfiguration().get("aegisthus.maxcolsize") != null) {
+				scanner.setMaxColSize(ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L));
+				LOG.info(String.format("aegisthus.maxcolsize - %d",
+						ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L)));
+			}
 			scanner.skipUnsafe(start);
 			this.pos = start;
 		} catch (IOException e) {
