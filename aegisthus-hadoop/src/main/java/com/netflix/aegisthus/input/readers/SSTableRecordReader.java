@@ -24,6 +24,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 
 import com.netflix.aegisthus.input.AegSplit;
 import com.netflix.aegisthus.io.sstable.SSTableScanner;
@@ -33,6 +34,9 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 	private SSTableScanner scanner;
 	private boolean outputFile = false;
 	private String filename = null;
+	private long errorRows = 0;
+	@SuppressWarnings("rawtypes")
+	private TaskInputOutputContext context = null;
 
 	@Override
 	public void close() throws IOException {
@@ -42,6 +46,7 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		}
 	}
 
+	@SuppressWarnings("rawtypes")
 	@Override
 	public void initialize(InputSplit inputSplit, TaskAttemptContext ctx) throws IOException, InterruptedException {
 		AegSplit split = (AegSplit) inputSplit;
@@ -54,18 +59,23 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		LOG.info(String.format("File: %s", split.getPath().toUri().getPath()));
 		LOG.info("Start: " + start);
 		LOG.info("End: " + end);
+		if (ctx instanceof TaskInputOutputContext) {
+			context = (TaskInputOutputContext) ctx;
+		}
 
 		try {
-			scanner = new SSTableScanner(	new DataInputStream(split.getInput(ctx.getConfiguration())),
-											split.getConvertors(),
-											end,
-											Descriptor.fromFilename(filename).version);
+			scanner = new SSTableScanner(new DataInputStream(split.getInput(ctx.getConfiguration())),
+					split.getConvertors(), end, Descriptor.fromFilename(filename).version);
+			if (ctx.getConfiguration().get("aegisthus.maxcolsize") != null) {
+				scanner.setMaxColSize(ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L));
+				LOG.info(String.format("aegisthus.maxcolsize - %d",
+						ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L)));
+			}
 			scanner.skipUnsafe(start);
 			this.pos = start;
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
-
 	}
 
 	@Override
@@ -82,6 +92,10 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		} else {
 			// a quick hack to pull out the rowkey from the json.
 			key.set(json.substring(2, json.indexOf(':') - 1));
+		}
+		if (context != null && scanner.getErrorRowCount() > errorRows) {
+			errorRows++;
+			context.getCounter("aegisthus", "errorRows").increment(1L);
 		}
 		value.set(json);
 		return true;

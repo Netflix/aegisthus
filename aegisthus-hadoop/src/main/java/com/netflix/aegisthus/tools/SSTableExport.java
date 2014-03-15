@@ -55,6 +55,7 @@ public class SSTableExport {
 	private static final String ROWSIZE = "r";
 	private static final String COLUMN_NAME_TYPE = "c";
 	private static final String OPT_COMP = "comp";
+	private static final String OPT_MAX_COLUMN_SIZE = "colSize";
 	private static final String OPT_VERSION = "v";
 
 	static {
@@ -78,6 +79,10 @@ public class SSTableExport {
 		Option optEnd = new Option(END, true, "Output row sizes");
 		optEnd.setArgs(1);
 		options.addOption(optEnd);
+
+		Option optColSize = new Option(OPT_MAX_COLUMN_SIZE, true, "Max Column Size in Bytes");
+		optColSize.setArgs(1);
+		options.addOption(optColSize);
 	}
 
 	@SuppressWarnings("rawtypes")
@@ -208,11 +213,21 @@ public class SSTableExport {
 			if (version == null) {
 				version = Descriptor.fromFilename(ssTableFileName).version;
 			}
+			SSTableScanner scanner;
 			if (cmd.hasOption(END)) {
 				long end = Long.valueOf(cmd.getOptionValue(END));
-				export(new SSTableScanner(input, convertors, end, version));
+				scanner = new SSTableScanner(input, convertors, end, version);
 			} else {
-				export(new SSTableScanner(input, convertors, version));
+				scanner = new SSTableScanner(input, convertors, version);
+			}
+			if (cmd.hasOption(OPT_MAX_COLUMN_SIZE)) {
+				scanner.setMaxColSize(Long.parseLong(cmd.getOptionValue(OPT_MAX_COLUMN_SIZE)));
+			}
+			export(scanner);
+			if (cmd.hasOption(OPT_MAX_COLUMN_SIZE)) {
+				if (scanner.getErrorRowCount() > 0) {
+					System.err.println(String.format("%d rows were too large", scanner.getErrorRowCount()));
+				}
 			}
 		}
 	}
