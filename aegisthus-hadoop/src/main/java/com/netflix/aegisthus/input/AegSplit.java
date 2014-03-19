@@ -57,6 +57,7 @@ public class AegSplit extends InputSplit implements Writable {
 	protected Path path;
 	protected long start;
 	protected Type type;
+    protected CompressionMetadata compressionMetadata = null;
 
 	public AegSplit() {
 	}
@@ -139,6 +140,10 @@ public class AegSplit extends InputSplit implements Writable {
 	public boolean isCompressed() {
 		return compressed;
 	}
+	
+	public CompressionMetadata getCompressionMetadata() {
+		return compressionMetadata;
+	}
 
 	public InputStream getInput(Configuration conf) throws IOException {
 		FileSystem fs = path.getFileSystem(conf);
@@ -146,8 +151,9 @@ public class AegSplit extends InputSplit implements Writable {
 		InputStream dis = new DataInputStream(new BufferedInputStream(fileIn));
 		if (compressed) {
 			FSDataInputStream cmIn = fs.open(compressedPath);
-			CompressionMetadata cm = new CompressionMetadata(new BufferedInputStream(cmIn), end - start);
-			dis = new CompressionInputStream(dis, cm);
+			compressionMetadata = new CompressionMetadata(new BufferedInputStream(cmIn), end - start);
+			dis = new CompressionInputStream(dis, compressionMetadata);
+			end = compressionMetadata.getDataLength();
 		}
 		return dis;
 	}

@@ -18,6 +18,7 @@ package com.netflix.aegisthus.input.readers;
 import java.io.DataInputStream;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.InputStream;
 
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.logging.Log;
@@ -52,7 +53,13 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		AegSplit split = (AegSplit) inputSplit;
 
 		start = split.getStart();
-		end = split.getEnd();
+		//TODO: This has a side effect of setting compressionmetadata. remove this.
+		InputStream is = split.getInput(ctx.getConfiguration());
+		if (split.isCompressed()) {
+			end = split.getCompressionMetadata().getDataLength();
+		} else {
+			end = split.getEnd();
+		}
 		outputFile = ctx.getConfiguration().getBoolean("aegsithus.debug.file", false);
 		filename = split.getPath().toUri().toString();
 
@@ -64,7 +71,7 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		}
 
 		try {
-			scanner = new SSTableScanner(new DataInputStream(split.getInput(ctx.getConfiguration())),
+			scanner = new SSTableScanner(new DataInputStream(is),
 					split.getConvertors(), end, Descriptor.fromFilename(filename).version);
 			if (ctx.getConfiguration().get("aegisthus.maxcolsize") != null) {
 				scanner.setMaxColSize(ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L));
