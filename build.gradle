@@ -60,7 +60,8 @@ project(':aegisthus-hadoop') {
         }
         includeInJar project(':aegisthus-core')
         includeInJar 'org.apache.cassandra:cassandra-all:1.2.15'
-
+        includeInJar 'org.apache.pig:pig:0.11.1'
+        includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
 
         compile 'org.slf4j:slf4j-api:1.6.3'
         compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')

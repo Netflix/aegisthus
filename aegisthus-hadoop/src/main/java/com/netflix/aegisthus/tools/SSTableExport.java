@@ -203,23 +203,21 @@ public class SSTableExport {
 			String ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 			FileInputStream fis = new FileInputStream(ssTableFileName);
 			InputStream inputStream = new DataInputStream(new BufferedInputStream(fis, 65536 * 10));
+			long end = -1;
+			if (cmd.hasOption(END)) {
+				end = Long.valueOf(cmd.getOptionValue(END));
+			}
 			if (cmd.hasOption(OPT_COMP)) {
 				CompressionMetadata cm = new CompressionMetadata(new BufferedInputStream(new FileInputStream(
 						cmd.getOptionValue(OPT_COMP)), 65536), fis.getChannel().size());
 				inputStream = new CompressionInputStream(inputStream, cm);
-
+				end = cm.getDataLength();
 			}
 			DataInputStream input = new DataInputStream(inputStream);
 			if (version == null) {
 				version = Descriptor.fromFilename(ssTableFileName).version;
 			}
-			SSTableScanner scanner;
-			if (cmd.hasOption(END)) {
-				long end = Long.valueOf(cmd.getOptionValue(END));
-				scanner = new SSTableScanner(input, convertors, end, version);
-			} else {
-				scanner = new SSTableScanner(input, convertors, version);
-			}
+			SSTableScanner scanner = new SSTableScanner(input, convertors, end, version);
 			if (cmd.hasOption(OPT_MAX_COLUMN_SIZE)) {
 				scanner.setMaxColSize(Long.parseLong(cmd.getOptionValue(OPT_MAX_COLUMN_SIZE)));
 			}
