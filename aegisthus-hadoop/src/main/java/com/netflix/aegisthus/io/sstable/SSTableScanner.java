@@ -297,7 +297,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 	}
 
 	private String convertColumnName(ByteBuffer bb) {
-		return columnNameConvertor.getString(bb).replaceAll("[\\s\\p{Cntrl}]", " ").replace("\\", "\\\\");
+		return columnNameConvertor.getString(bb).replaceAll("[\\s\\p{Cntrl}]", " ").replace("\\", "\\\\").replace("\"", "\\\"");
 	}
 
 	public long getErrorRowCount() {
