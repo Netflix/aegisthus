@@ -102,7 +102,7 @@ public class SSTableRecordReader extends AegisthusRecordReader {
 		}
 		if (context != null && scanner.getErrorRowCount() > errorRows) {
 			errorRows++;
-			context.getCounter("aegisthus", "errorRows").increment(1L);
+			context.getCounter("aegisthus", "rowsToBig").increment(1L);
 		}
 		value.set(json);
 		return true;

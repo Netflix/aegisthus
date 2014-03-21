@@ -76,7 +76,7 @@ public class SSTableExport {
 		optVersion.setArgs(1);
 		options.addOption(optVersion);
 
-		Option optEnd = new Option(END, true, "Output row sizes");
+		Option optEnd = new Option(END, true, "byte offset to end reading at");
 		optEnd.setArgs(1);
 		options.addOption(optEnd);
 
@@ -105,8 +105,8 @@ public class SSTableExport {
 		export(new OffsetScanner(ssTableFile), true);
 	}
 
-	public static void exportIndexSplit(String ssTableFile, DataInput input) throws IOException {
-		Iterator<Long> scanner = new OffsetScanner(input);
+	public static void exportIndexSplit(String ssTableFile, DataInput input, Descriptor.Version version) throws IOException {
+		Iterator<Long> scanner = new OffsetScanner(input, version);
 
 		long maxSplitSize = Long.getLong("aegisthus.block.size", 67108864);
 		long splitStart = 0;
@@ -184,7 +184,10 @@ public class SSTableExport {
 				ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 				input = new DataInputStream(new BufferedInputStream(new FileInputStream(ssTableFileName), 65536 * 10));
 			}
-			exportIndexSplit(ssTableFileName, input);
+			if (version == null) {
+				version = Descriptor.fromFilename(ssTableFileName).version;
+			}
+			exportIndexSplit(ssTableFileName, input, version);
 		} else if (cmd.hasOption(INDEX)) {
 			String ssTableFileName = new File(cmd.getArgs()[0]).getAbsolutePath();
 			exportIndex(ssTableFileName);

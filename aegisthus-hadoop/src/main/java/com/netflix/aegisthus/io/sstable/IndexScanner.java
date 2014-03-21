@@ -24,35 +24,39 @@ import java.io.IOException;
 import java.util.Iterator;
 
 import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.FileUtils;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.cassandra.utils.Pair;
 
-public class IndexScanner implements Iterator<Pair<String, Long>>{
+public class IndexScanner implements Iterator<Pair<String, Long>> {
 	private DataInput input;
+	private Descriptor.Version version = null;
 
 	public IndexScanner(String filename) {
 		try {
 			this.input = new DataInputStream(new BufferedInputStream(new FileInputStream(filename), 65536 * 10));
+			this.version = Descriptor.fromFilename(filename).version;
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
 	}
-	
+
 	public void close() {
 		if (input != null) {
 			try {
-				((DataInputStream)input).close();
+				((DataInputStream) input).close();
 			} catch (IOException e) {
-				//ignore
+				// ignore
 			}
 			input = null;
 		}
 	}
-	
+
 	@Override
 	public boolean hasNext() {
 		try {
-			return ((DataInputStream)input).available() != 0 ;
+			return ((DataInputStream) input).available() != 0;
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
@@ -63,11 +67,23 @@ public class IndexScanner implements Iterator<Pair<String, Long>>{
 		try {
 			String key = BytesType.instance.getString(ByteBufferUtil.readWithShortLength(input));
 			Long offset = input.readLong();
+			if (version.hasPromotedIndexes) {
+				skipPromotedIndexes();
+			}
 			return Pair.create(key, offset);
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
-		
+
+	}
+
+	protected void skipPromotedIndexes() throws IOException {
+		int size = input.readInt();
+		if (size <= 0) {
+			return;
+		}
+
+		FileUtils.skipBytesFully(input, size);
 	}
 
 	@Override
