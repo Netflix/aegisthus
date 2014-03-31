@@ -112,7 +112,7 @@ public class AegisthusSerializer {
 			List<Object> list = (List<Object>) e.getValue();
 
 			sb.append("[");
-			sb.append("\"").append(((String) list.get(0)).replace("\\", "\\\\")).append("\"").append(",");
+			sb.append("\"").append(((String) list.get(0)).replace("\\", "\\\\").replace("\"", "\\\"")).append("\"").append(",");
 			sb.append("\"").append(list.get(1)).append("\"").append(",");
 			sb.append(list.get(2));
 			if (list.size() > 3) {
