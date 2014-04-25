@@ -72,7 +72,10 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 		this(input, converters, -1, version);
 	}
 
-	public SSTableScanner(DataInput input, Map<String, AbstractType> converters, long end, Descriptor.Version version) {
+	public SSTableScanner(DataInput input,
+			Map<String, AbstractType> converters,
+			long end,
+			Descriptor.Version version) {
 		init(input, converters, end);
 		this.version = version;
 	}
@@ -176,7 +179,9 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			this.pos += datasize;
 			int bfsize = 0;
 			int idxsize = 0;
+			int indexLengthSize = 0;
 			if (!version.hasPromotedIndexes) {
+				indexLengthSize = 8;
 				if (input instanceof DataInputStream) {
 					// skip bloom filter
 					bfsize = input.readInt();
@@ -202,17 +207,14 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			int localDeletionTime = input.readInt();
 			long markedForDeleteAt = input.readLong();
 			int columnCount = input.readInt();
-			long columnsize = datasize
-					- keysize
-					- 2 /*byte for keysize*/
-					- 8 /*long for data size */
-					- bfsize
-					- 4 /*int for bloom filter size */
-					- idxsize
-					- 4 /*int for index size */
-					- 4 /*local deletetion time*/
-					- 8 /*marked for delete */
-					- 4 /*column count*/;
+			long columnsize = datasize - keysize - 2 /* byte for keysize */
+					- 8 /* long for data size */
+					- bfsize  /* int for bloom filter size */
+					- idxsize  /* int for index size */
+					- indexLengthSize /* 0 or 8 depending on promoted indexes */
+					- 4 /* local deletetion time */
+					- 8 /* marked for delete */
+					- 4 /* column count */;
 			str.append("{");
 			insertKey(str, key);
 			str.append("{");

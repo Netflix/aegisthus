@@ -23,20 +23,31 @@ import java.io.IOError;
 import java.io.IOException;
 import java.util.Iterator;
 
+import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.FileUtils;
+
 /**
  * This class reads an SSTable index file and returns the offset for each key.
  * If you want to know the key related with each offset use {@link IndexScanner}
  */
 public class OffsetScanner implements Iterator<Long> {
 	private DataInput input;
+	private Descriptor.Version version = null;
 
-	public OffsetScanner(DataInput input) {
+	public OffsetScanner(DataInput input, Descriptor.Version version) {
 		this.input = input;
+		this.version = version;
+	}
+
+	public OffsetScanner(DataInput input, String filename) {
+		this.input = input;
+		this.version = Descriptor.fromFilename(filename).version;
 	}
 
 	public OffsetScanner(String filename) {
 		try {
 			this.input = new DataInputStream(new BufferedInputStream(new FileInputStream(filename), 65536 * 10));
+			this.version = Descriptor.fromFilename(filename).version;
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
@@ -68,11 +79,22 @@ public class OffsetScanner implements Iterator<Long> {
 			int keysize = input.readUnsignedShort();
 			input.skipBytes(keysize);
 			Long offset = input.readLong();
+			if (version.hasPromotedIndexes) {
+				skipPromotedIndexes();
+			}
 			return offset;
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
+	}
 
+	protected void skipPromotedIndexes() throws IOException {
+		int size = input.readInt();
+		if (size <= 0) {
+			return;
+		}
+
+		FileUtils.skipBytesFully(input, size);
 	}
 
 	@Override

@@ -144,7 +144,7 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 						fuzzySplit = length;
 					} else {
 						FSDataInputStream fileIn = fs.open(indexPath);
-						scanner = new OffsetScanner(new DataInputStream(new BufferedInputStream(fileIn)));
+						scanner = new OffsetScanner(new DataInputStream(new BufferedInputStream(fileIn)), indexPath.getName());
 					}
 				}
 				long splitStart = 0;
