@@ -20,7 +20,7 @@ allprojects {
 apply from: file('gradle/convention.gradle')
 apply from: file('gradle/maven.gradle')
 //apply from: file('gradle/check.gradle')
-//apply from: file('gradle/license.gradle')
+apply from: file('gradle/license.gradle')
 apply from: file('gradle/release.gradle')
 
 subprojects {
@@ -29,6 +29,24 @@ subprojects {
     dependencies {
         testCompile 'org.testng:testng:6.1.1'
         testCompile 'org.easymock:easymock:3.0'
+    }
+}
+
+project(':aegisthus-distcp') {
+    apply plugin: 'java'
+    apply plugin: 'eclipse'
+    dependencies {
+        configurations.includeInJar {
+            transitive = false
+        }
+        includeInJar project(':aegisthus-core')
+        includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
+        includeInJar 'com.google.guava:guava:12.0'
+
+        configurations.compile.extendsFrom(configurations.includeInJar)
+    }
+    jar {
+        from { configurations.includeInJar.collect { it.isDirectory() ? it : zipTree(it) } }
     }
 }
 
