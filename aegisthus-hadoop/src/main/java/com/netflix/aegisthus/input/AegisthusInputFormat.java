@@ -132,10 +132,10 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 
 			long bytesRemaining = length;
 
-			Iterator<Long> scanner = null;
 			Path compressionPath = new Path(path.getParent(), path.getName().replaceAll("-Data.db",
 																						"-CompressionInfo.db"));
 			if (!fs.exists(compressionPath)) {
+				OffsetScanner scanner = null;
 				// Only initialize if we are going to have more than a single
 				// split
 				if (fuzzySplit < length) {
@@ -164,6 +164,9 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 												convertors));
 					bytesRemaining -= splitSize;
 					splitStart += splitSize;
+				}
+				if (scanner != null ) {
+					scanner.close();
 				}
 			}
 
