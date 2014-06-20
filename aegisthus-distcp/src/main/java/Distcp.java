@@ -26,7 +26,7 @@ import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.StringUtils;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
@@ -35,6 +35,8 @@ import com.google.common.collect.Lists;
 import com.netflix.aegisthus.tools.DirectoryWalker;
 import com.netflix.aegisthus.tools.StorageHelper;
 import com.netflix.aegisthus.tools.Utils;
+
+import com.netflix.hadoop.output.CleanOutputFormat;
 
 public class Distcp extends Configured implements Tool {
 	public static class Map extends Mapper<LongWritable, Text, LongWritable, Text> {
@@ -192,7 +194,7 @@ public class Distcp extends Configured implements Tool {
 		job.setJarByClass(Distcp.class);
 
 		job.setInputFormatClass(TextInputFormat.class);
-		job.setOutputFormatClass(TextOutputFormat.class);
+		job.setOutputFormatClass(CleanOutputFormat.class);
 		job.setMapOutputKeyClass(LongWritable.class);
 		job.setMapOutputValueClass(Text.class);
 		job.setMapperClass(Map.class);
@@ -290,7 +292,7 @@ public class Distcp extends Configured implements Tool {
 		setReducers(job, fileCount);
 
 		TextInputFormat.setInputPaths(job, inputPath.toUri().toString());
-		TextOutputFormat.setOutputPath(job, tmpPath);
+		FileOutputFormat.setOutputPath(job, tmpPath);
 
 		boolean success = runJob(job, cl);
 		// TODO: output manifest

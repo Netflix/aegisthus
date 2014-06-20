@@ -197,7 +197,7 @@ public class StorageHelper {
 		os.close();
 	}
 
-	protected void moveTaskOutputToFinal() throws IOException {
+	public void moveTaskOutputToFinal() throws IOException {
 		String tempLocation = getBaseTaskAttemptTempLocation();
 		Path path = new Path(tempLocation);
 		List<String> relativePaths = Lists.newArrayList(DirectoryWalker
