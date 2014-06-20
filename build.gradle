@@ -32,6 +32,24 @@ subprojects {
     }
 }
 
+project(':aegisthus-distcp') {
+    apply plugin: 'java'
+    apply plugin: 'eclipse'
+    dependencies {
+        configurations.includeInJar {
+            transitive = false
+        }
+        includeInJar project(':aegisthus-core')
+        includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
+        includeInJar 'com.google.guava:guava:12.0'
+
+        configurations.compile.extendsFrom(configurations.includeInJar)
+    }
+    jar {
+        from { configurations.includeInJar.collect { it.isDirectory() ? it : zipTree(it) } }
+    }
+}
+
 project(':aegisthus-core') {
     apply plugin: 'java'
     apply plugin: 'eclipse'
