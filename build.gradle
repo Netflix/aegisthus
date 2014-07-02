@@ -60,7 +60,8 @@ project(':aegisthus-core') {
         includeInJar 'com.fasterxml.jackson.core:jackson-databind:2.1.4'
         compile 'org.apache.pig:pig:0.11.1'
         compile 'org.slf4j:slf4j-api:1.6.3'
-        compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
+        includeHadoopLibs(project, project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
+
         configurations.compile.extendsFrom(configurations.includeInJar)
     }
     jar {
@@ -82,7 +83,7 @@ project(':aegisthus-hadoop') {
         includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
 
         compile 'org.slf4j:slf4j-api:1.6.3'
-        compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
+        includeHadoopLibs(project, project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
 
         configurations.compile.extendsFrom(configurations.includeInJar)
     }
@@ -99,7 +100,7 @@ project(':aegisthus-pig') {
         includeInJar project(':aegisthus-core')
         compile 'org.apache.pig:pig:0.11.1'
         compile 'joda-time:joda-time:1.6'
-        compile 'org.apache.hadoop:hadoop-core:' + (project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
+        includeHadoopLibs(project, project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0')
 
         configurations.compile.extendsFrom(configurations.includeInJar)
     }
@@ -109,3 +110,18 @@ project(':aegisthus-pig') {
     }
 }
 
+// include correct hadoop libraries for version
+def includeHadoopLibs(project, hadoopVersion='1.1.0') {
+    if (hadoopVersion.startsWith('1')) {
+        project.dependencies {
+            compile 'org.apache.hadoop:hadoop-core:' + hadoopVersion
+        }
+    } else {
+        project.dependencies {
+            compile 'org.apache.hadoop:hadoop-common:' + hadoopVersion
+            compile 'org.apache.hadoop:hadoop-hdfs:' + hadoopVersion
+            compile 'org.apache.hadoop:hadoop-mapreduce-client-core:' + hadoopVersion
+            compile 'org.apache.hadoop:hadoop-mapreduce-client-jobclient:' + hadoopVersion
+        }
+    }
+}
