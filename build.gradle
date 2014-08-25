@@ -124,7 +124,7 @@ task wrapper(type: Wrapper) {
 
 // include correct hadoop libraries for version
 def includeHadoopLibs(project) {
-    hadoopVersion = hadoopVersion ?: '1.1.0'
+    def hadoopVersion = project.hasProperty('hadoopVersion') ? hadoopVersion : '1.1.0'
     if (hadoopVersion.startsWith('1')) {
         project.dependencies {
             compile "org.apache.hadoop:hadoop-core:$hadoopVersion"
