@@ -18,7 +18,6 @@ package com.netflix.aegisthus.input;
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -26,6 +25,7 @@ import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.utils.Pair;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.fs.BlockLocation;
@@ -60,6 +60,7 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 	public static final String KEY_TYPE = "aegisthus.keytype";
 	@SuppressWarnings("rawtypes")
 	protected Map<String, AbstractType> convertors;
+	private List<FileStatus> overrideListStatus = null;
 
 	@Override
 	public RecordReader<Text, Text> createRecordReader(InputSplit inputSplit, TaskAttemptContext context) {
@@ -152,7 +153,8 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 					long splitSize = 0;
 					// The scanner returns an offset from the start of the file.
 					while (splitSize < maxSplitSize && scanner.hasNext()) {
-						splitSize = scanner.next() - splitStart;
+                        Pair<Long, Long> pair = scanner.next();
+                        splitSize = pair.left - splitStart;
 					}
 					int blkIndex = getBlockIndex(blkLocations, splitStart + (splitSize / 2));
 					LOG.info("split path: " + path.getName() + ":" + splitStart + ":" + splitSize);
@@ -216,5 +218,26 @@ public class AegisthusInputFormat extends FileInputFormat<Text, Text> {
 			}
 		}
 		return splits;
+	}
+
+	/**
+	 * If we have been given a list of statuses to operate on, use those instead of falling back to the base method.
+	 */
+	@Override
+	protected List<FileStatus> listStatus(JobContext job) throws IOException {
+		if (overrideListStatus == null) {
+			return super.listStatus(job);
+		} else {
+			return overrideListStatus;
+		}
+	}
+
+	/**
+	 * Instead of using the base listStatus, return this list of file statuses
+	 *
+	 * @param overrideListStatus the list of statuses to be returned for all future calls to this.listStatus()
+	 */
+	public void setOverrideListStatus(List<FileStatus> overrideListStatus) {
+		this.overrideListStatus = overrideListStatus;
 	}
 }

@@ -42,6 +42,11 @@ public class IndexScanner implements Iterator<Pair<String, Long>> {
 		}
 	}
 
+	public IndexScanner(DataInput input, Descriptor.Version version) {
+		this.input = input;
+		this.version = version;
+	}
+
 	public void close() {
 		if (input != null) {
 			try {
@@ -74,7 +79,6 @@ public class IndexScanner implements Iterator<Pair<String, Long>> {
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
-
 	}
 
 	protected void skipPromotedIndexes() throws IOException {
