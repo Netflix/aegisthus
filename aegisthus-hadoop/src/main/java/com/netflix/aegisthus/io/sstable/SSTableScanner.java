@@ -37,6 +37,8 @@ import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.sstable.Descriptor;
 
 import com.google.common.collect.Maps;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class serializes each row in a SSTable to a string.
@@ -51,7 +53,8 @@ import com.google.common.collect.Maps;
  */
 @SuppressWarnings("rawtypes")
 public class SSTableScanner extends SSTableReader implements Iterator<String> {
-	public static final String COLUMN_NAME_KEY = "$$CNK$$";
+    private static final Logger LOG = LoggerFactory.getLogger(SSTableScanner.class);
+    public static final String COLUMN_NAME_KEY = "$$CNK$$";
 	public static final String KEY = "$$KEY$$";
 	public static final String SUB_KEY = "$$SUB_KEY$$";
 
@@ -235,6 +238,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			str.append("]");
 			str.append("}}\n");
 		} catch (IOException e) {
+            LOG.error("Failing due to error", e);
 			throw new IOError(e);
 		}
 
@@ -292,6 +296,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 				 * sb.append(rt.data.markedForDeleteAt); sb.append(", \"");
 				 * sb.append(convertColumnName(rt.max)); sb.append("\"]");
 				 */
+                LOG.debug("Skipping RangedTombstone in JSON output");
 			} else {
 				throw new IOException("column unexpected type");
 			}
