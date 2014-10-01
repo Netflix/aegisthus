@@ -19,12 +19,14 @@ import java.io.DataInput;
 import java.io.DataInputStream;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.RandomAccessFile;
 
 public class SSTableReader {
 
 	protected long datasize;
 	protected DataInput input;
+	protected InputStream is;
 	protected boolean supercolumn;
 
 	long end = -1;
@@ -64,11 +66,23 @@ public class SSTableReader {
 	public void skipUnsafe(int bytes) throws IOException {
 		int skipped = 0;
 		while (skipped < bytes) {
-			skipped += input.skipBytes(bytes);
+			skipped += input.skipBytes(bytes - skipped);
 		}
 	}
 
 	public void skipUnsafe(long bytes) throws IOException {
+	    pos = bytes;
+	    if (is != null) {
+	        long skipped = 0;
+	        while (skipped < bytes) {
+	            long actual = is.skip(bytes - skipped);
+	            if (actual < 0) {
+	                throw new IOException("skip returned negative");
+	            }
+	            skipped += actual;
+	        }
+	        return;
+	    }
 		while (bytes > Integer.MAX_VALUE) {
 			skipUnsafe(Integer.MAX_VALUE);
 			bytes -= Integer.MAX_VALUE;

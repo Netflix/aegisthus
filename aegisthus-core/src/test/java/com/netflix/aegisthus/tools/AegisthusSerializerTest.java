@@ -15,7 +15,7 @@ import com.google.common.collect.Maps;
 
 public class AegisthusSerializerTest {
 
-	@Test
+	@Test(enabled = false)
 	public void agent() throws IOException {
 		BufferedReader br = new BufferedReader(new InputStreamReader(AegisthusSerializerTest.class.getResourceAsStream("/agent.json")));
 		String line = null;

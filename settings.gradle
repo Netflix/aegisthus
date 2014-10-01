@@ -1,2 +1,2 @@
 rootProject.name='aegisthus' // TEMPLATE: Change this
-include 'aegisthus-core', 'aegisthus-hadoop', 'aegisthus-pig', 'aegisthus-distcp'
+include 'aegisthus-core', 'aegisthus-distcp', 'aegisthus-hadoop', 'aegisthus-pig', 'aegisthus-test'

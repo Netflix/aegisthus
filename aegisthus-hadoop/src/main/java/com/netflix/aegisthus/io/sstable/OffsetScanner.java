@@ -21,26 +21,31 @@ import java.io.DataInputStream;
 import java.io.FileInputStream;
 import java.io.IOError;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.Iterator;
 
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.cassandra.utils.Pair;
+import org.apache.commons.io.input.CountingInputStream;
 
 /**
  * This class reads an SSTable index file and returns the offset for each key.
  * If you want to know the key related with each offset use {@link IndexScanner}
  */
-public class OffsetScanner implements Iterator<Long> {
+public class OffsetScanner implements Iterator<Pair<Long, Long>> {
 	private DataInput input;
 	private Descriptor.Version version = null;
+	private CountingInputStream countingInputStream;
 
 	public OffsetScanner(DataInput input, Descriptor.Version version) {
 		this.input = input;
 		this.version = version;
 	}
 
-	public OffsetScanner(DataInput input, String filename) {
-		this.input = input;
+	public OffsetScanner(InputStream is, String filename) {
+		this.countingInputStream = new CountingInputStream(is);
+		this.input = new DataInputStream(this.countingInputStream);
 		this.version = Descriptor.fromFilename(filename).version;
 	}
 
@@ -73,16 +78,20 @@ public class OffsetScanner implements Iterator<Long> {
 		}
 	}
 
+	/**
+	 * Returns a Pair<Long, Long> where the pair is <offset in data file, offset in the index file>
+	 **/
 	@Override
-	public Long next() {
+	public Pair<Long, Long> next() {
 		try {
+			long indexOffset = countingInputStream.getCount();
 			int keysize = input.readUnsignedShort();
 			input.skipBytes(keysize);
 			Long offset = input.readLong();
 			if (version.hasPromotedIndexes) {
 				skipPromotedIndexes();
 			}
-			return offset;
+			return Pair.create(offset, indexOffset);
 		} catch (IOException e) {
 			throw new IOError(e);
 		}
