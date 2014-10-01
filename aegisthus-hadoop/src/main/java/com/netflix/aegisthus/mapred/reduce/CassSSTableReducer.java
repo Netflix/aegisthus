@@ -21,7 +21,6 @@ import java.util.Iterator;
 import java.util.List;
 
 import org.apache.cassandra.db.Column;
-import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.BytesType;
@@ -83,7 +82,7 @@ public class CassSSTableReducer extends Reducer<CompositeKey, AtomWritable, Text
 
     static class Reduce {
         private final List<OnDiskAtom> columns = Lists.newArrayList();
-        private final OnDiskAtom.Serializer serializer = new OnDiskAtom.Serializer(new ColumnSerializer());
+        private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
         // TODO: need to get comparator
         private final RangeTombstone.Tracker tombstoneTracker = new RangeTombstone.Tracker(BytesType.instance);
         private OnDiskAtom currentColumn = null;

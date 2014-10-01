@@ -23,7 +23,6 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.ColumnSerializer.CorruptColumnException;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.BytesType;
@@ -39,7 +38,7 @@ import com.netflix.aegisthus.io.writable.AtomWritable;
 public class SSTableColumnScanner extends SSTableReader {
     private static final Log LOG = LogFactory.getLog(SSTableColumnScanner.class);
     private Descriptor.Version version = null;
-    private final OnDiskAtom.Serializer serializer = new OnDiskAtom.Serializer(new ColumnSerializer());
+    private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
 
     public SSTableColumnScanner(Descriptor.Version version) {
         this.version = version;
@@ -103,25 +102,6 @@ public class SSTableColumnScanner extends SSTableReader {
                     continue;
                 }
                 this.pos += datasize;
-                int bfsize = 0;
-                int idxsize = 0;
-                if (!version.hasPromotedIndexes) {
-                    if (input instanceof DataInputStream) {
-                        // skip bloom filter
-                        bfsize = input.readInt();
-                        skip(bfsize);
-                        // skip index
-                        idxsize = input.readInt();
-                        skip(idxsize);
-                    } else {
-                        // skip bloom filter
-                        bfsize = input.readInt();
-                        input.skipBytes(bfsize);
-                        // skip index
-                        idxsize = input.readInt();
-                        input.skipBytes(idxsize);
-                    }
-                }
                 /*
                  * The local deletion times are similar to the times that they
                  * were marked for delete, but we only care to know that it was

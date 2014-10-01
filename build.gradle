@@ -95,7 +95,7 @@ project(':aegisthus-hadoop') {
         }
         includeInJar project(':aegisthus-core')
         includeInJar project(':aegisthus-distcp')
-        includeInJar 'org.apache.cassandra:cassandra-all:1.2.15'
+        includeInJar 'org.apache.cassandra:cassandra-all:2.0.10'
         includeInJar 'org.apache.thrift:libthrift:0.9.1'
         includeInJar 'org.apache.pig:pig:0.11.1'
         includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'

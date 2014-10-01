@@ -88,9 +88,7 @@ public class OffsetScanner implements Iterator<Pair<Long, Long>> {
 			int keysize = input.readUnsignedShort();
 			input.skipBytes(keysize);
 			Long offset = input.readLong();
-			if (version.hasPromotedIndexes) {
-				skipPromotedIndexes();
-			}
+			skipPromotedIndexes();
 			return Pair.create(offset, indexOffset);
 		} catch (IOException e) {
 			throw new IOError(e);

@@ -72,9 +72,7 @@ public class IndexScanner implements Iterator<Pair<String, Long>> {
 		try {
 			String key = BytesType.instance.getString(ByteBufferUtil.readWithShortLength(input));
 			Long offset = input.readLong();
-			if (version.hasPromotedIndexes) {
-				skipPromotedIndexes();
-			}
+			skipPromotedIndexes();
 			return Pair.create(key, offset);
 		} catch (IOException e) {
 			throw new IOError(e);

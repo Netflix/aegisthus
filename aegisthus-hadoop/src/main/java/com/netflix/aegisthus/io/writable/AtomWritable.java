@@ -6,12 +6,11 @@ import java.io.IOException;
 
 import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.io.IColumnSerializer.Flag;
 import org.apache.cassandra.io.sstable.Descriptor.Version;
 import org.apache.hadoop.io.Writable;
 
 public class AtomWritable implements Writable {
-    private final OnDiskAtom.Serializer serializer = new OnDiskAtom.Serializer(new ColumnSerializer());
+    private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
     private OnDiskAtom atom;
     private long deletedAt;
     private byte[] key;
@@ -32,7 +31,7 @@ public class AtomWritable implements Writable {
         dis.readFully(bytes);
         this.key = bytes;
         this.deletedAt = dis.readLong();
-        this.atom = serializer.deserializeFromSSTable(dis, Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Version.CURRENT);
+        this.atom = serializer.deserializeFromSSTable(dis, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Version.CURRENT);
     }
 
     @Override
