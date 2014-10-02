@@ -12,6 +12,7 @@ import com.netflix.Aegisthus
 class AegisthusIntegrationSpec extends Specification {
     private static final Logger LOG = LoggerFactory.getLogger(AegisthusIntegrationSpec)
     private static final TAB_SPLITTER = Splitter.on('\t').limit(2)
+    private static final String OUTPUT_VERSION = 'jb'
 
     private void checkFile(File file) {
         assert file, 'Unable to check null file'
@@ -156,7 +157,7 @@ class AegisthusIntegrationSpec extends Specification {
         !exitCode
 
         and: 'the columnar output file should exist'
-        def columnarOutput = new File(columnarOutputDirectory, 'keyspace-dataset-ic-0000000000-Data.db')
+        def columnarOutput = new File(columnarOutputDirectory, "keyspace-dataset-$OUTPUT_VERSION-0000000000-Data.db")
         checkFile(columnarOutput)
 
         when: 'aegisthus is run against the just produced columnar output'
@@ -198,7 +199,7 @@ class AegisthusIntegrationSpec extends Specification {
         !exitCode
 
         and: 'the columnar output file should exist'
-        def columnarOutput = new File(columnarOutputDirectory, 'keyspace-dataset-ic-0000000000-Data.db')
+        def columnarOutput = new File(columnarOutputDirectory, "keyspace-dataset-$OUTPUT_VERSION-0000000000-Data.db")
         checkFile(columnarOutput)
 
         and: 'and the output should match the cassandra compacted output'
@@ -231,7 +232,7 @@ class AegisthusIntegrationSpec extends Specification {
         !exitCode
 
         and: 'the columnar output file should exist'
-        def columnarOutput = new File(columnarOutputDirectory, 'keyspace-dataset-ic-0000000000-Data.db')
+        def columnarOutput = new File(columnarOutputDirectory, "keyspace-dataset-$OUTPUT_VERSION-0000000000-Data.db")
         checkFile(columnarOutput)
 
         when: 'aegisthus is run against the just produced columnar output'
