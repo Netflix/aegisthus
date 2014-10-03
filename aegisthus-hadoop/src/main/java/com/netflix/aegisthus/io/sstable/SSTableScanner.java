@@ -177,17 +177,17 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			byte[] b = new byte[keysize];
 			long columnsize = 0L;
 			int columnCount = Integer.MAX_VALUE;
-			
+
 			input.readFully(b);
 			String key = keyConvertor.getString(ByteBuffer.wrap(b));
-			datasize = keysize + 2	/* byte for keysize */
-				+ 4			/* local deletion time */
-				+ 8;		/* marked for delete */
-			
+			// The unsigned short that contains the keysize and the keysize
+			datasize = keysize + 2;
+
 			if (version.hasRowSizeAndColumnCount) {
 				columnsize = input.readLong();
-				datasize += columnsize;
+				datasize += columnsize + 8; // column size + the long that held the column size
 			}
+			this.pos += datasize;
 
 			// The local deletion times are similar to the times that they were
 			// marked for delete, but we only
@@ -200,7 +200,6 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 
 			if (version.hasRowSizeAndColumnCount) {
 				columnCount = input.readInt();
-				datasize += 4;	/* column count size */
 			}
 
 			str.append("{");
@@ -223,8 +222,6 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			}
 			str.append("]");
 			str.append("}}\n");
-
-			this.pos += datasize;
 		} catch (IOException e) {
             LOG.error("Failing due to error", e);
 			throw new IOError(e);
@@ -242,17 +239,19 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 	public long serializeColumns(StringBuilder sb, int count, DataInput columns) throws IOException {
 		int sbStartPos = sb.length();	// in case we need to rewind later (large column)
 		boolean moreThanOne = false;
-		boolean skip = true;
+		boolean skip = false;
 		long colsize = 2L;		// END_OF_ROW marker is 2 bytes
 
 		// this method is tricky, since in 2.0 we don't actually have a column count.
 		for (int i = 0; i < count; i++) {
 			// serialize columns
 			OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
-			if (atom == null) break;
-			
+			if (atom == null) {
+				break;
+			}
+
 			colsize += atom.serializedSizeForSSTable();
-			
+
 			if (skip) {
 				continue;
 			} else if (maxColSize != -1 && colsize >= maxColSize) {
@@ -264,7 +263,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 			if (atom instanceof Column) {
 				Column column = (Column) atom;
 				String cn = convertColumnName(column.name());
-				
+
 				if (moreThanOne) {
 					sb.append(", ");
 				} else {
@@ -306,17 +305,17 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 				 * sb.append(rt.data.markedForDeleteAt); sb.append(", \"");
 				 * sb.append(convertColumnName(rt.max)); sb.append("\"]");
 				 */
-                LOG.debug("Skipping RangedTombstone in JSON output");
+				LOG.debug("Skipping RangedTombstone in JSON output");
 			} else {
 				throw new IOException("column unexpected type");
 			}
 		}
-		
+
 		if (skip) {
 			errorRowCount++;
 			sb.append(rowTooLargeErrorMsg(colsize, maxColSize));
 		}
-		
+
 		return colsize;
 	}
 
@@ -331,7 +330,7 @@ public class SSTableScanner extends SSTableReader implements Iterator<String> {
 	public void setMaxColSize(long maxColSize) {
 		this.maxColSize = maxColSize;
 	}
-	
+
 	private String rowTooLargeErrorMsg(long datasize, long maxColSize) {
 		return String.format("[\"error\",\"row too large: %,d bytes - limit %,d bytes\",0]", datasize,
 						maxColSize);
