@@ -152,7 +152,7 @@ public class Aegisthus extends Configured implements Tool {
         if (exit) {
             System.exit(res);
         } else if(res != 0) {
-            throw new RuntimeException("Unexpected exit code");
+            throw new RuntimeException("aegisthus finished with a non-zero exit code: " + res);
         }
     }
 
