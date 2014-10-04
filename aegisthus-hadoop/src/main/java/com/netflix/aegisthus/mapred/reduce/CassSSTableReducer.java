@@ -24,7 +24,7 @@ import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.io.sstable.Descriptor.Version;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -33,7 +33,9 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.netflix.Aegisthus;
 import com.netflix.aegisthus.io.writable.AtomWritable;
 import com.netflix.aegisthus.io.writable.CompositeKey;
 import com.netflix.aegisthus.tools.StorageHelper;
@@ -68,11 +70,16 @@ public class CassSSTableReducer extends Reducer<CompositeKey, AtomWritable, Text
 
     @Override
     protected void setup(Context context) throws IOException, InterruptedException {
+        Configuration configuration = context.getConfiguration();
+        String versionString = configuration.getTrimmed(Aegisthus.SSTABLE_VERSION_CONFIGURATION_NAME);
+        Preconditions.checkArgument(versionString != null && !versionString.isEmpty(), "Configuration property %s must be set", Aegisthus.SSTABLE_VERSION_CONFIGURATION_NAME);
+
         StorageHelper sh = new StorageHelper(context);
         Path outputDir = new Path(sh.getBaseTaskAttemptTempLocation());
-        FileSystem fs = outputDir.getFileSystem(context.getConfiguration());
+        FileSystem fs = outputDir.getFileSystem(configuration);
+
         String filename = String.format("%s-%s-%05d0%04d-Data.db",
-                context.getConfiguration().get("aegisthus.dataset", "keyspace-dataset"), Version.current_version,
+                context.getConfiguration().get("aegisthus.dataset", "keyspace-dataset"), versionString,
                 context.getTaskAttemptID().getTaskID().getId(), context.getTaskAttemptID().getId());
         Path outputFile = new Path(outputDir, filename);
         LOG.info("writing to: {}", outputFile.toUri());

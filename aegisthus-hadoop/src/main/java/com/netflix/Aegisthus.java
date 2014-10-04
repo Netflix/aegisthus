@@ -25,6 +25,7 @@ import java.util.UUID;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
@@ -66,6 +67,7 @@ import com.netflix.hadoop.output.CleanOutputFormat;
 
 public class Aegisthus extends Configured implements Tool {
     private static final Logger LOG = LoggerFactory.getLogger(Aegisthus.class);
+    public static final String SSTABLE_VERSION_CONFIGURATION_NAME = "aegisthus.version_of_sstable";
     public static class ColumnarMap extends Mapper<CompositeKey, AtomWritable, CompositeKey, AtomWritable> {
         @Override
         protected void map(CompositeKey key, AtomWritable value, Context context) throws IOException,
@@ -144,6 +146,7 @@ public class Aegisthus extends Configured implements Tool {
     private static final String OPT_INPUTDIR = "inputDir";
     private static final String OPT_OUTPUT = "output";
     private static final String OPT_PRODUCESSTABLE = "produceSSTable";
+    private static final String OPT_VERSION = "versionOfSSTable";
 
     public static void main(String[] args) throws Exception {
         int res = ToolRunner.run(new Configuration(), new Aegisthus(), args);
@@ -189,6 +192,10 @@ public class Aegisthus extends Configured implements Tool {
                 .withDescription("a directory from which we will recursively pull sstables")
                 .hasArgs()
                 .create(OPT_INPUTDIR));
+        opts.addOption(OptionBuilder.withArgName(OPT_VERSION)
+                .withDescription("The version of sstable to read and/or produce defaults to " + Descriptor.Version.current_version)
+                .hasArgs()
+                .create(OPT_VERSION));
         opts.addOption(OptionBuilder.withArgName(OPT_PRODUCESSTABLE)
                 .withDescription("produces sstable output (default is to produce json)")
                 .create(OPT_PRODUCESSTABLE));
@@ -220,6 +227,15 @@ public class Aegisthus extends Configured implements Tool {
         CommandLine cl = getOptions(args);
         if (cl == null) {
             return 1;
+        }
+
+        String configVersion = job.getConfiguration().get(SSTABLE_VERSION_CONFIGURATION_NAME);
+        String commandLineVersion = cl.getOptionValue(OPT_VERSION);
+
+        if (commandLineVersion != null) {
+            job.getConfiguration().set(SSTABLE_VERSION_CONFIGURATION_NAME, commandLineVersion);
+        } else if (configVersion == null) {
+            job.getConfiguration().set(SSTABLE_VERSION_CONFIGURATION_NAME, Descriptor.Version.current_version);
         }
 
         return cl.hasOption(OPT_PRODUCESSTABLE) ? runColumnar(job, cl) : runJson(job, cl);

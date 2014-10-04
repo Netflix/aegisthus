@@ -14,11 +14,13 @@ public class AtomWritable implements Writable {
     private OnDiskAtom atom;
     private long deletedAt;
     private byte[] key;
+    private String versionString;
 
     public AtomWritable() {
     }
 
-    public AtomWritable(byte[] key, long deletedAt, OnDiskAtom atom) throws IOException {
+    public AtomWritable(Version version, byte[] key, long deletedAt, OnDiskAtom atom) throws IOException {
+        this.versionString = version.toString();
         this.atom = atom;
         this.deletedAt = deletedAt;
         this.key = key;
@@ -26,16 +28,19 @@ public class AtomWritable implements Writable {
 
     @Override
     public void readFields(DataInput dis) throws IOException {
+        versionString = String.valueOf(dis.readChar()) + dis.readChar();
         int length = dis.readInt();
         byte[] bytes = new byte[length];
         dis.readFully(bytes);
         this.key = bytes;
         this.deletedAt = dis.readLong();
-        this.atom = serializer.deserializeFromSSTable(dis, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, Version.CURRENT);
+        this.atom = serializer.deserializeFromSSTable(dis, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, new Version(versionString));
     }
 
     @Override
     public void write(DataOutput dos) throws IOException {
+        dos.writeChar(versionString.charAt(0));
+        dos.writeChar(versionString.charAt(1));
         dos.writeInt(this.key.length);
         dos.write(this.key);
         dos.writeLong(this.deletedAt);

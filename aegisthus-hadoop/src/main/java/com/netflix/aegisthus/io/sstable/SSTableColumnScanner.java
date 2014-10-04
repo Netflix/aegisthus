@@ -130,7 +130,7 @@ public class SSTableColumnScanner extends SSTableReader {
         for (int i = 0; i < count; i++) {
             // serialize columns
             OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
-            subscriber.onNext(new AtomWritable(rowKey, deletedAt, atom));
+            subscriber.onNext(new AtomWritable(version, rowKey, deletedAt, atom));
         }
     }
 
