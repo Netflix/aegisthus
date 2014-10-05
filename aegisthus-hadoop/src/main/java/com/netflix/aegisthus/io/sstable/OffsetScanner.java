@@ -84,7 +84,7 @@ public class OffsetScanner implements Iterator<Pair<Long, Long>> {
 	@Override
 	public Pair<Long, Long> next() {
 		try {
-			long indexOffset = countingInputStream.getCount();
+			long indexOffset = countingInputStream.getByteCount();
 			int keysize = input.readUnsignedShort();
 			input.skipBytes(keysize);
 			Long offset = input.readLong();
