@@ -1,5 +1,7 @@
 import groovy.json.JsonSlurper
+import spock.lang.IgnoreRest
 import spock.lang.Specification
+import spock.lang.Unroll
 
 import org.apache.hadoop.util.ProgramDriver
 import org.slf4j.Logger
@@ -108,18 +110,20 @@ class AegisthusIntegrationSpec extends Specification {
         compareAegJsonMaps(expectedJson, actualJson, rowsToSkip)
     }
 
-    def 'test aegisthus json output on cassandra 1.2.18 input'() {
+    @IgnoreRest
+    @Unroll('Read sstable from cassandra #cassandraVersionNumber dataset #dataset, directly generate aegisthus json output')
+    def 'test reading sstable and directly generating aegisthus json output'() {
         setup:
         def outputDir = Files.createTempDir()
         def programDriver = new ProgramDriver()
         programDriver.addClass('aegisthus', Aegisthus, 'aegisthus')
         String[] aegisthusCommandLine = [
                 'aegisthus',
-                '-versionOfSSTable', 'ic',
-                '-inputDir', getResourceDirectory('/testdata/1.2.18/randomtable/input').absolutePath,
+                '-versionOfSSTable', cassandraSstableVersionNumber,
+                '-inputDir', getResourceDirectory("/testdata/$cassandraVersionNumber/$dataset/input").absolutePath,
                 '-output', outputDir.absolutePath
         ]
-        File expectedOutput = new File(getResourceDirectory('/testdata/1.2.18/randomtable/aeg_json_output'), 'aeg-00000')
+        File expectedOutput = new File(getResourceDirectory("/testdata/$cassandraVersionNumber/$dataset/aeg_json_output"), 'aeg-00000')
 
         when: 'when aegisthus is run with a fresh output directory'
         outputDir.delete()
@@ -130,12 +134,18 @@ class AegisthusIntegrationSpec extends Specification {
 
         and: 'and the output should match the expected json output'
         def actualOutput = new File(outputDir, 'aeg-00000')
-        // Skip these rows because they are output incorrectly included by the old data output
-        def skippedRows = ['0000002d', '0000004b']
         compareAegJsonOutput(expectedOutput, actualOutput, skippedRows)
+
+        where:
+        cassandraVersionNumber | cassandraSstableVersionNumber | dataset          | skippedRows
+        '1.2.18'               | 'ic'                          | 'randomtable'    | ['0000002d', '0000004b'] // Skip these rows because they are output incorrectly included by the old data output
+        '1.2.18'               | 'ic'                          | 'rangetombstone' | ['726f7731'] // We skip the only row because the aeg_json_output is wrong when not using the columnar scanner
+        '2.0.10'               | 'jb'                          | 'randomtable'    | [] // ['0000002d', '0000004b'] // Skip these rows because they are output incorrectly included by the old data output
+        '2.0.10'               | 'jb'                          | 'rangetombstone' | ['726f7731'] // We skip the only row because the aeg_json_output is wrong when not using the columnar scanner
     }
 
-    def 'test aegisthus columnar output on cassandra 1.2.18 input'() {
+    @Unroll('Read sstable from cassandra #cassandraVersionNumber dataset #dataset, generate an sstable output using the columnar input format,  and then generate aegisthus json output')
+    def 'test reading sstable and generating aegisthus sstable output and then generating json output from that sstable'() {
         setup:
         def columnarOutputDirectory = Files.createTempDir()
         def jsonOutputDirectory = Files.createTempDir()
@@ -143,12 +153,12 @@ class AegisthusIntegrationSpec extends Specification {
         programDriver.addClass('aegisthus', Aegisthus, 'aegisthus')
         String[] aegisthusCommandLine = [
                 'aegisthus',
-                '-versionOfSSTable', 'ic',
-                '-inputDir', getResourceDirectory('/testdata/1.2.18/randomtable/input').absolutePath,
+                '-versionOfSSTable', cassandraSstableVersionNumber,
+                '-inputDir', getResourceDirectory("/testdata/$cassandraVersionNumber/$dataset/input").absolutePath,
                 '-output', columnarOutputDirectory.absolutePath,
                 '-produceSSTable'
         ]
-        File expectedOutput = new File(getResourceDirectory('/testdata/1.2.18/randomtable/aeg_json_output'), 'aeg-00000')
+        File expectedOutput = new File(getResourceDirectory("/testdata/$cassandraVersionNumber/$dataset/aeg_json_output"), 'aeg-00000')
 
         when: 'when aegisthus is run with a fresh output directory'
         columnarOutputDirectory.delete()
@@ -164,7 +174,7 @@ class AegisthusIntegrationSpec extends Specification {
         when: 'aegisthus is run against the just produced columnar output'
         aegisthusCommandLine = [
                 'aegisthus',
-                '-versionOfSSTable', 'ic',
+                '-versionOfSSTable', cassandraSstableVersionNumber,
                 '-input', columnarOutput.absolutePath,
                 '-output', jsonOutputDirectory.absolutePath
         ]
@@ -177,89 +187,12 @@ class AegisthusIntegrationSpec extends Specification {
         and: 'and the output should match the expected json output'
         def actualOutput = new File(jsonOutputDirectory, 'aeg-00000')
         compareAegJsonOutput(expectedOutput, actualOutput)
-    }
 
-    def 'test aegisthus columnar rangetombstone on cassandra 1.2.18 input'() {
-        setup:
-        def columnarOutputDirectory = Files.createTempDir()
-        def programDriver = new ProgramDriver()
-        programDriver.addClass('aegisthus', Aegisthus, 'aegisthus')
-        String[] aegisthusCommandLine = [
-                'aegisthus',
-                '-versionOfSSTable', 'ic',
-                '-inputDir', getResourceDirectory('/testdata/1.2.18/rangetombstone/input').absolutePath,
-                '-output', columnarOutputDirectory.absolutePath,
-                '-produceSSTable'
-        ]
-        File expectedOutput = new File(getResourceDirectory('/testdata/1.2.18/rangetombstone/aeg_sstable_output'), 'keyspace-dataset-ic-0000000000-Data.db')
-        checkFile(expectedOutput)
-
-        when: 'when aegisthus is run with a fresh output directory'
-        columnarOutputDirectory.delete()
-        def exitCode = programDriver.run(aegisthusCommandLine)
-
-        then: 'exitCode should be zero'
-        !exitCode
-
-        and: 'the columnar output file should exist'
-        def columnarOutput = new File(columnarOutputDirectory, "keyspace-dataset-ic-0000000000-Data.db")
-        checkFile(columnarOutput)
-
-        and: 'and the output should match the cassandra compacted output'
-        System.err.println "Checking output file ${columnarOutput.absolutePath} against compacted file ${expectedOutput.absolutePath}"
-        byte[] expectedOutputBytes = expectedOutput.bytes
-        byte[] columnarOutputBytes = columnarOutput.bytes
-        expectedOutputBytes.length == columnarOutputBytes.length
-        expectedOutputBytes == columnarOutputBytes
-    }
-
-    def 'test aegisthus json output on cassandra 1.2.18 input that has rangetombstone'() {
-        setup:
-        def columnarOutputDirectory = Files.createTempDir()
-        def jsonOutputDirectory = Files.createTempDir()
-        def programDriver = new ProgramDriver()
-        programDriver.addClass('aegisthus', Aegisthus, 'aegisthus')
-        String[] aegisthusCommandLine = [
-                'aegisthus',
-                '-versionOfSSTable', 'ic',
-                '-inputDir', getResourceDirectory('/testdata/1.2.18/rangetombstone/input').absolutePath,
-                '-output', columnarOutputDirectory.absolutePath,
-                '-produceSSTable'
-        ]
-        String expectedResults = new File(getResourceDirectory('/testdata/1.2.18/rangetombstone/aeg_json_output'), 'aeg-00000').text
-
-        when: 'when aegisthus is run with a fresh output directory'
-        columnarOutputDirectory.delete()
-        def exitCode = programDriver.run(aegisthusCommandLine)
-
-        then: 'exitCode should be zero'
-        !exitCode
-
-        and: 'the columnar output file should exist'
-        def columnarOutput = new File(columnarOutputDirectory, "keyspace-dataset-ic-0000000000-Data.db")
-        checkFile(columnarOutput)
-
-        when: 'aegisthus is run against the just produced columnar output'
-        aegisthusCommandLine = [
-                'aegisthus',
-                '-versionOfSSTable', 'ic',
-                '-input', columnarOutput.absolutePath,
-                '-output', jsonOutputDirectory.absolutePath
-        ]
-        jsonOutputDirectory.delete()
-        exitCode = programDriver.run(aegisthusCommandLine)
-
-        then: 'exitCode should be zero'
-        !exitCode
-
-        and: 'and the output should match the expected json output'
-        def outputFile = new File(jsonOutputDirectory, 'aeg-00000'/**/)
-        checkFile(outputFile)
-        List<String> expectedLines = expectedResults.readLines()
-        List<String> outputLines = outputFile.readLines()
-        expectedLines.size() == outputLines.size()
-        for (int i = 0; i < expectedLines.size(); i++) {
-            assert expectedLines[i] == outputLines[i], "Mismatch on line ${i + 1}"
-        }
+        where:
+        cassandraVersionNumber | cassandraSstableVersionNumber | dataset
+        '1.2.18'               | 'ic'                          | 'randomtable'
+        '1.2.18'               | 'ic'                          | 'rangetombstone'
+        '2.0.10'               | 'jb'                          | 'randomtable'
+        '2.0.10'               | 'jb'                          | 'rangetombstone'
     }
 }
