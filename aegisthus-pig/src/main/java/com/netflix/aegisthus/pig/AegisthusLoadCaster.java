@@ -138,6 +138,7 @@ public class AegisthusLoadCaster implements LoadCaster {
 	}
 
 	@Override
+    @Deprecated
 	public Map<String, Object> bytesToMap(byte[] arg0) throws IOException {
 		throw new IOException("Don't do that");
 	}

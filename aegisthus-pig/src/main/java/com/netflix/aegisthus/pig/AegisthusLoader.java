@@ -158,7 +158,7 @@ public class AegisthusLoader extends PigStorage implements LoadMetadata {
 
 	protected ResourceSchema columnSchema() throws IOException {
 		ResourceSchema schema = new ResourceSchema();
-		List<ResourceFieldSchema> fields = new ArrayList<ResourceSchema.ResourceFieldSchema>();
+		List<ResourceFieldSchema> fields = new ArrayList<>();
 
 		fields.add(field("name", DataType.BYTEARRAY));
 		fields.add(field("value", DataType.BYTEARRAY));
@@ -184,7 +184,7 @@ public class AegisthusLoader extends PigStorage implements LoadMetadata {
 	@Override
 	public ResourceSchema getSchema(String location, Job job) throws IOException {
 		ResourceSchema resourceSchema = new ResourceSchema();
-		List<ResourceFieldSchema> fields = new ArrayList<ResourceSchema.ResourceFieldSchema>();
+		List<ResourceFieldSchema> fields = new ArrayList<>();
 		fields.add(field("key", DataType.BYTEARRAY));
 		fields.add(field("deletedat", DataType.LONG));
 		fields.add(subfield("map_columns", DataType.MAP, columnSchema()));
@@ -246,7 +246,7 @@ public class AegisthusLoader extends PigStorage implements LoadMetadata {
 
 	@SuppressWarnings("unchecked")
 	protected Tuple tuple(Map<String, Object> map) throws JsonParseException, IOException {
-		List<Object> values = new ArrayList<Object>();
+		List<Object> values = new ArrayList<>();
 		if (required(0)) {
 			values.add(map.get(AegisthusSerializer.KEY));
 		}

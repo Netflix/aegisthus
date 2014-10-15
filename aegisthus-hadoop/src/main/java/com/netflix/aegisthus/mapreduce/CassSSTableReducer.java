@@ -13,98 +13,93 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.netflix.aegisthus.mapred.reduce;
+package com.netflix.aegisthus.mapreduce;
 
-import java.io.DataOutput;
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.List;
-
+import com.google.common.collect.Lists;
+import com.netflix.aegisthus.io.writable.AegisthusKey;
+import com.netflix.aegisthus.io.writable.AtomWritable;
+import com.netflix.aegisthus.io.writable.RowWritable;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataOutputStream;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
-import com.netflix.Aegisthus;
-import com.netflix.aegisthus.io.writable.AtomWritable;
-import com.netflix.aegisthus.io.writable.CompositeKey;
-import com.netflix.aegisthus.tools.StorageHelper;
+import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.util.Iterator;
+import java.util.List;
 
-public class CassSSTableReducer extends Reducer<CompositeKey, AtomWritable, Text, Text> {
+public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, BytesWritable, RowWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(CassSSTableReducer.class);
-    FSDataOutputStream dos;
-    Reduce reduce;
+    private long rowsToAddToCounter = 0;
 
     @Override
     protected void cleanup(Context context) throws IOException, InterruptedException {
-        dos.close();
+        updateCounter(context, true);
         super.cleanup(context);
     }
 
     @Override
-    public void reduce(CompositeKey key, Iterable<AtomWritable> values, Context ctx) throws IOException, InterruptedException {
-        reduce = new Reduce();
+    public void reduce(AegisthusKey key, Iterable<AtomWritable> values, Context ctx)
+            throws IOException, InterruptedException {
+        RowReducer rowReducer = new RowReducer();
 
         for (AtomWritable value : values) {
-            reduce.setKey(value.getKey());
-            if (value.getDeletedAt() > reduce.getDeletedAt()) {
-                reduce.setDeletedAt(value.getDeletedAt());
+            if (rowReducer.key == null) {
+                rowReducer.key = value.getKey();
+
+                if (LOG.isDebugEnabled()) {
+                    String hexKey = BytesType.instance.getString(ByteBuffer.wrap(rowReducer.key));
+                    LOG.debug("Doing reduce for key '{}'", hexKey);
+                }
             }
-            reduce.addAtom(value.getAtom());
+
+            if (value.getDeletedAt() > rowReducer.deletedAt) {
+                rowReducer.deletedAt = value.getDeletedAt();
+            }
+
+            rowReducer.addAtom(value);
         }
-        reduce.finalizeReduce();
-        reduce.writeRow(dos);
-        // TODO: batch this
-        ctx.getCounter("aegisthus", "rows_written").increment(1L);
+
+        rowReducer.finalizeReduce();
+
+        BytesWritable bytesWritable = new BytesWritable(key.getKey().array());
+        ctx.write(bytesWritable, RowWritable.createRowWritable(rowReducer.columns, rowReducer.deletedAt));
+        updateCounter(ctx, false);
     }
 
-    @Override
-    protected void setup(Context context) throws IOException, InterruptedException {
-        Configuration configuration = context.getConfiguration();
-        String versionString = configuration.getTrimmed(Aegisthus.SSTABLE_VERSION_CONFIGURATION_NAME);
-        Preconditions.checkArgument(versionString != null && !versionString.isEmpty(), "Configuration property %s must be set", Aegisthus.SSTABLE_VERSION_CONFIGURATION_NAME);
-
-        StorageHelper sh = new StorageHelper(context);
-        Path outputDir = new Path(sh.getBaseTaskAttemptTempLocation());
-        FileSystem fs = outputDir.getFileSystem(configuration);
-
-        String filename = String.format("%s-%s-%05d0%04d-Data.db",
-                context.getConfiguration().get("aegisthus.dataset", "keyspace-dataset"), versionString,
-                context.getTaskAttemptID().getTaskID().getId(), context.getTaskAttemptID().getId());
-        Path outputFile = new Path(outputDir, filename);
-        LOG.info("writing to: {}", outputFile.toUri());
-        dos = fs.create(outputFile);
-        super.setup(context);
+    void updateCounter(Context ctx, boolean flushRegardlessOfCount) {
+        if (flushRegardlessOfCount && rowsToAddToCounter != 0) {
+            ctx.getCounter("aegisthus", "rows_written").increment(rowsToAddToCounter);
+            rowsToAddToCounter = 0;
+        } else {
+            if (rowsToAddToCounter % 100 == 0) {
+                ctx.getCounter("aegisthus", "rows_written").increment(rowsToAddToCounter);
+                rowsToAddToCounter = 0;
+            }
+            rowsToAddToCounter++;
+        }
     }
 
-    static class Reduce {
+    static class RowReducer {
         private final List<OnDiskAtom> columns = Lists.newArrayList();
-        private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
         // TODO: need to get comparator
         private final RangeTombstone.Tracker tombstoneTracker = new RangeTombstone.Tracker(BytesType.instance);
         private OnDiskAtom currentColumn = null;
         private long deletedAt = Long.MIN_VALUE;
         private byte[] key;
 
-        public void setKey(byte[] key) {
-            this.key = key;
-        }
-
         @SuppressWarnings("StatementWithEmptyBody")
-        public void addAtom(OnDiskAtom atom) {
+        public void addAtom(AtomWritable writable) {
+            OnDiskAtom atom = writable.getAtom();
             if (atom == null) {
                 return;
             }
+
             this.tombstoneTracker.update(atom);
             // Right now, we will only keep columns. This works because we will
             // have all the columns a range tombstone applies to when we create
@@ -130,7 +125,9 @@ public class CassSSTableReducer extends Reducer<CompositeKey, AtomWritable, Text
             } else if (atom instanceof RangeTombstone) {
                 // We do not include these columns in the output since they are deleted
             } else {
-                throw new IllegalArgumentException("Cassandra added a new type " + atom.getClass().getCanonicalName() + " which we do not support");
+                String error =
+                        "Cassandra added a new type " + atom.getClass().getCanonicalName() + " which we do not support";
+                throw new IllegalArgumentException(error);
             }
         }
 
@@ -153,31 +150,6 @@ public class CassSSTableReducer extends Reducer<CompositeKey, AtomWritable, Text
                     columnIterator.remove();
                 }
             }
-        }
-
-        public void writeRow(DataOutput dos) throws IOException {
-            dos.writeShort(this.key.length);
-            dos.write(this.key);
-            long dataSize = 16; // The bytes for the Int, Long, Int after this loop
-            for (OnDiskAtom atom : columns) {
-                dataSize += atom.serializedSizeForSSTable();
-            }
-            dos.writeLong(dataSize);
-            dos.writeInt((int) (this.deletedAt / 1000));
-            dos.writeLong(this.deletedAt);
-            dos.writeInt(columns.size());
-            for (OnDiskAtom atom : columns) {
-                serializer.serializeForSSTable(atom, dos);
-            }
-
-        }
-
-        public long getDeletedAt() {
-            return deletedAt;
-        }
-
-        public void setDeletedAt(long deletedAt) {
-            this.deletedAt = deletedAt;
         }
     }
 }

@@ -13,17 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.netflix.aegisthus.columnar_input.splits;
+package com.netflix.aegisthus.input.splits;
 
-import java.io.BufferedInputStream;
-import java.io.DataInput;
-import java.io.DataInputStream;
-import java.io.DataOutput;
-import java.io.IOException;
-import java.io.InputStream;
-
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileSystem;
@@ -31,42 +22,49 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.io.WritableUtils;
 import org.apache.hadoop.mapreduce.InputSplit;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nonnull;
+import java.io.BufferedInputStream;
+import java.io.DataInput;
+import java.io.DataInputStream;
+import java.io.DataOutput;
+import java.io.IOException;
+import java.io.InputStream;
 
 public class AegSplit extends InputSplit implements Writable {
-    private static final Log LOG = LogFactory.getLog(AegSplit.class);
-
-    public enum Type {
-        commitlog, sstable
-    }
+    private static final Logger LOG = LoggerFactory.getLogger(AegSplit.class);
 
     protected long end;
     protected String[] hosts;
     protected Path path;
     protected long start;
-    protected Type type;
 
-    public AegSplit() {
+    public static AegSplit createSplit(@Nonnull Path path, long start, long length, @Nonnull String[] hosts) {
+        AegSplit split = new AegSplit();
+        split.path = path;
+        split.start = start;
+        split.end = length + start;
+        split.hosts = hosts;
+        LOG.info("start: {}, end: {}", start, split.end);
+
+        return split;
     }
 
-    public AegSplit(Path path, long start, long length, String[] hosts) {
-        this(path, start, length, hosts, Type.sstable);
-    }
-
-    public AegSplit(Path path, long start, long length, String[] hosts, Type type) {
-        this.type = type;
-        this.path = path;
-        this.start = start;
-        this.end = length + start;
-        LOG.info(String.format("start: %d, end: %d", start, end));
-        this.hosts = hosts;
+    public long getDataEnd() {
+        return end;
     }
 
     public long getEnd() {
         return end;
     }
 
-    public long getDataEnd() {
-        return end;
+    @Nonnull
+    public InputStream getInput(@Nonnull Configuration conf) throws IOException {
+        FileSystem fs = path.getFileSystem(conf);
+        FSDataInputStream fileIn = fs.open(path);
+        return new DataInputStream(new BufferedInputStream(fileIn));
     }
 
     @Override
@@ -75,11 +73,21 @@ public class AegSplit extends InputSplit implements Writable {
     }
 
     @Override
+    @Nonnull
     public String[] getLocations() throws IOException, InterruptedException {
+        if (hosts == null) {
+            throw new IllegalStateException("hosts should not be null at this point");
+        }
+
         return hosts;
     }
 
+    @Nonnull
     public Path getPath() {
+        if (path == null) {
+            throw new IllegalStateException("path should not be null at this point");
+        }
+
         return path;
     }
 
@@ -87,36 +95,19 @@ public class AegSplit extends InputSplit implements Writable {
         return start;
     }
 
-    public Type getType() {
-        return type;
-    }
-
-    public InputStream getInput(Configuration conf) throws IOException {
-        FileSystem fs = path.getFileSystem(conf);
-        FSDataInputStream fileIn = fs.open(path);
-        return new DataInputStream(new BufferedInputStream(fileIn));
-    }
-
-    public InputStream getIndexInput(Configuration conf) throws IOException {
-        return null;
-    }
-
     @Override
-    public void readFields(DataInput in) throws IOException {
+    public void readFields(@Nonnull DataInput in) throws IOException {
         end = in.readLong();
         hosts = WritableUtils.readStringArray(in);
         path = new Path(WritableUtils.readString(in));
         start = in.readLong();
-        type = WritableUtils.readEnum(in, Type.class);
     }
 
     @Override
-    public void write(DataOutput out) throws IOException {
+    public void write(@Nonnull DataOutput out) throws IOException {
         out.writeLong(end);
         WritableUtils.writeStringArray(out, hosts);
         WritableUtils.writeString(out, path.toUri().toString());
         out.writeLong(start);
-        WritableUtils.writeEnum(out, type);
     }
-
 }

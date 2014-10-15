@@ -15,62 +15,44 @@
  */
 package com.netflix.aegisthus.io.sstable;
 
+import com.netflix.aegisthus.io.writable.AtomWritable;
+import org.apache.cassandra.db.ColumnSerializer.CorruptColumnException;
+import org.apache.cassandra.db.OnDiskAtom;
+import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.cassandra.io.util.FileUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import rx.Observable.OnSubscribe;
+import rx.Subscriber;
+
 import java.io.DataInput;
 import java.io.DataInputStream;
+import java.io.IOError;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import org.apache.cassandra.db.ColumnSerializer.CorruptColumnException;
-import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.db.marshal.BytesType;
-import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-
-import rx.Observable.OnSubscribe;
-import rx.Subscriber;
-
-import com.netflix.aegisthus.io.writable.AtomWritable;
-
-public class SSTableColumnScanner extends SSTableReader {
-    private static final Log LOG = LogFactory.getLog(SSTableColumnScanner.class);
-    private Descriptor.Version version = null;
+public class SSTableColumnScanner {
+    private static final Logger LOG = LoggerFactory.getLogger(SSTableColumnScanner.class);
     private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
-
-    public SSTableColumnScanner(Descriptor.Version version) {
-        this.version = version;
-        this.end = -1;
-    }
-
-    public SSTableColumnScanner(long end, Descriptor.Version version) {
-        this.version = version;
-        this.end = end;
-    }
-
-    public SSTableColumnScanner(InputStream is, Descriptor.Version version) {
-        this.version = version;
-        this.end = -1;
-        init(is);
-    }
+    private long end = -1;
+    private DataInputStream input;
+    private long pos = 0;
+    private Descriptor.Version version = null;
 
     public SSTableColumnScanner(InputStream is, long end, Descriptor.Version version) {
         this.version = version;
         this.end = end;
-        init(is);
-    }
-
-    protected void init(InputStream is) {
-        this.is = is;
         this.input = new DataInputStream(is);
     }
 
     public void close() {
         if (input != null) {
             try {
-                ((DataInputStream) input).close();
+                input.close();
             } catch (IOException e) {
                 // ignore
             }
@@ -78,45 +60,48 @@ public class SSTableColumnScanner extends SSTableReader {
         }
     }
 
-    @Override
-    protected void finalize() throws Throwable {
-        close();
-        super.finalize();
-    }
-
-    protected void deserialize(Subscriber<? super AtomWritable> subscriber) {
-        LOG.info(String.format("current pos(%d) done (%s)", pos, hasMore() ? "has more" : "no more"));
+    void deserialize(Subscriber<? super AtomWritable> subscriber) {
+        LOG.info("current pos({}) done ({})", pos, hasMore() ? "has more" : "no more");
         while (hasMore()) {
             try {
-                checkPosition(subscriber);
                 int keysize = input.readUnsignedShort();
+                long rowSize = 2;
                 byte[] rowKey = new byte[keysize];
                 input.readFully(rowKey);
-                datasize = input.readLong() + keysize + 2 + 8;
-                /*
-                 * The indexScanner is here to check to make sure that we are at
-                 * the correct place in the file.
-                 */
-                String hexKey = BytesType.instance.getString(ByteBuffer.wrap(rowKey));
-                if (!validateRow(subscriber, hexKey, datasize) || (end != -1 && this.pos + datasize > end)) {
-                    continue;
+                rowSize += keysize;
+
+                if (version.hasRowSizeAndColumnCount) {
+                    rowSize += input.readLong() + 8;
+                    // Since we have the row size in this version we can go ahead and set pos to the end of the row.
+                    this.pos += rowSize;
                 }
-                this.pos += datasize;
+
                 /*
                  * The local deletion times are similar to the times that they
                  * were marked for delete, but we only care to know that it was
                  * deleted at all, so we will go with the long value as the
                  * timestamps for update are long as well.
                  */
-                @SuppressWarnings("unused")
+                @SuppressWarnings({ "unused", "UnusedAssignment" })
                 int localDeletionTime = input.readInt();
+                rowSize += 4;
                 long markedForDeleteAt = input.readLong();
-                int columnCount = input.readInt();
+                rowSize += 8;
+                int columnCount = Integer.MAX_VALUE;
+                if (version.hasRowSizeAndColumnCount) {
+                    columnCount = input.readInt();
+                }
+
                 try {
-                    serializeColumns(subscriber, rowKey, markedForDeleteAt, columnCount, input);
+                    rowSize += deserializeColumns(subscriber, rowKey, markedForDeleteAt, columnCount, input);
                 } catch (CorruptColumnException e) {
-                    // TODO: new exception that has row key
-                    subscriber.onError(new IOException(hexKey, e));
+                    subscriber.onError(new IOException(
+                            "Error in row for key " + BytesType.instance.getString(ByteBuffer.wrap(rowKey)), e));
+                }
+
+                // For versions without row size we need to load the columns to figure out the size they occupy
+                if (!version.hasRowSizeAndColumnCount) {
+                    this.pos += rowSize;
                 }
             } catch (IOException e) {
                 subscriber.onError(e);
@@ -125,26 +110,48 @@ public class SSTableColumnScanner extends SSTableReader {
         }
     }
 
-    protected void serializeColumns(Subscriber<? super AtomWritable> subscriber, byte[] rowKey, long deletedAt, int count,
+    long deserializeColumns(Subscriber<? super AtomWritable> subscriber, byte[] rowKey, long deletedAt,
+            int count,
             DataInput columns) throws IOException {
-        for (int i = 0; i < count; i++) {
+        long columnSize = 0;
+        int actualColumnCount = 0;
+        for (int i = 0; i < count; i++, actualColumnCount++) {
             // serialize columns
             OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
-            subscriber.onNext(new AtomWritable(version, rowKey, deletedAt, atom));
+            if (atom == null) {
+                // If atom was null that means this was a version that does not have version.hasRowSizeAndColumnCount
+                // So we have to add the size for the end of row marker also
+                columnSize += 2;
+                break;
+            }
+            columnSize += atom.serializedSizeForSSTable();
+            subscriber.onNext(AtomWritable.createWritable(rowKey, deletedAt, atom));
         }
+
+        // This is a row with no columns, we still create a writable because we want to preserve this information
+        if (actualColumnCount == 0) {
+            subscriber.onNext(AtomWritable.createWritable(rowKey, deletedAt, null));
+        }
+
+        return columnSize;
     }
 
-    /**
-     * Here so that it can be overridden by a scanner that keeps track of position
-     */
-    protected boolean validateRow(Subscriber<? super AtomWritable> subscriber, String key, long datasize) {
-        return true;
+    @Override
+    protected void finalize() throws Throwable {
+        close();
+        super.finalize();
     }
 
-    /**
-     * Here so that it can be overridden by a scanner that keeps track of position
-     */
-    protected void checkPosition(Subscriber<? super AtomWritable> subscriber) throws IOException {
+    boolean hasMore() {
+        try {
+            if (end == -1) {
+                return input.available() != 0;
+            } else {
+                return pos < end;
+            }
+        } catch (IOException e) {
+            throw new IOError(e);
+        }
     }
 
     public rx.Observable<AtomWritable> observable() {
@@ -163,5 +170,13 @@ public class SSTableColumnScanner extends SSTableReader {
         });
         LOG.info("created observable");
         return ret;
+    }
+
+    public void skipUnsafe(long bytes) throws IOException {
+        if (bytes <= 0) {
+            return;
+        }
+
+        FileUtils.skipBytesFully(input, bytes);
     }
 }
