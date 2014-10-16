@@ -26,8 +26,8 @@ allprojects {
         mavenCentral()
     }
     tasks.withType(JavaCompile) {
-        sourceCompatibility = "1.6"
-        targetCompatibility = "1.6"
+        sourceCompatibility = '1.7'
+        targetCompatibility = '1.7'
     }
 }
 
@@ -57,7 +57,6 @@ project(':aegisthus-distcp') {
         }
         includeInJar project(':aegisthus-core')
         includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
-        includeInJar 'com.google.guava:guava:12.0'
 
         configurations.compile.extendsFrom(configurations.includeInJar)
     }
@@ -70,12 +69,11 @@ project(':aegisthus-core') {
     apply plugin: 'java'
     apply plugin: 'eclipse'
     dependencies {
-        includeInJar 'com.google.guava:guava:12.0'
-        includeInJar 'com.fasterxml.jackson.core:jackson-core:2.1.4'
-        includeInJar 'com.fasterxml.jackson.core:jackson-annotations:2.1.4'
-        includeInJar 'com.fasterxml.jackson.core:jackson-databind:2.1.4'
         compile 'org.apache.pig:pig:0.11.1'
-        compile 'org.slf4j:slf4j-api:1.6.3'
+        compile 'org.slf4j:slf4j-api:1.7.7'
+        compile 'org.slf4j:slf4j-log4j12:1.7.7'
+        includeInJar 'com.fasterxml.jackson.core:jackson-core:2.4.3'
+        includeInJar 'com.google.guava:guava:15.0'
         includeHadoopLibs(project)
 
         configurations.compile.extendsFrom(configurations.includeInJar)
@@ -95,13 +93,11 @@ project(':aegisthus-hadoop') {
         }
         includeInJar project(':aegisthus-core')
         includeInJar project(':aegisthus-distcp')
-        includeInJar 'org.apache.cassandra:cassandra-all:1.2.15'
-        includeInJar 'org.apache.thrift:libthrift:0.9.1'
-        includeInJar 'org.apache.pig:pig:0.11.1'
-        includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
+        compile 'org.apache.pig:pig:0.11.1'
         includeInJar 'com.netflix.rxjava:rxjava-core:0.19.6'
+        includeInJar 'org.apache.cassandra:cassandra-all:2.0.10'
+        includeInJar 'org.apache.thrift:libthrift:0.9.1'
 
-        compile 'org.slf4j:slf4j-api:1.6.3'
         includeHadoopLibs(project)
 
         configurations.compile.extendsFrom(configurations.includeInJar)
@@ -116,7 +112,6 @@ project(':aegisthus-pig') {
     apply plugin: 'java'
     apply plugin: 'eclipse'
     dependencies {
-        includeInJar project(':aegisthus-core')
         includeInJar project(':aegisthus-hadoop')
         compile 'org.apache.pig:pig:0.11.1'
         compile 'joda-time:joda-time:1.6'

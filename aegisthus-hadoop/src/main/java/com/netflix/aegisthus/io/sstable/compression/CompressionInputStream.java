@@ -15,134 +15,123 @@
  */
 package com.netflix.aegisthus.io.sstable.compression;
 
-import static java.lang.Math.min;
+import org.xerial.snappy.SnappyOutputStream;
 
+import javax.annotation.Nonnull;
 import java.io.EOFException;
 import java.io.IOException;
 import java.io.InputStream;
 
-import org.xerial.snappy.SnappyOutputStream;
+import static java.lang.Math.min;
 
 /**
  * This class implements an input stream for reading Snappy compressed data of
  * the format produced by {@link SnappyOutputStream}.
  */
 public class CompressionInputStream extends InputStream {
-	private final byte[] buffer;
-	private boolean closed;
-	private CompressionMetadata cm;
+    private final byte[] buffer;
+    private final CompressionMetadata cm;
+    private final InputStream in;
+    private final byte[] input;
+    private boolean closed;
+    private int position;
+    private int valid;
 
-	private boolean eof;
-	private final InputStream in;
-	private final byte[] input;
-	private int position;
-	private int valid;
+    /**
+     * Creates a Snappy input stream to read data from the specified underlying
+     * input stream.
+     *
+     * @param in
+     *            the underlying input stream
+     */
+    public CompressionInputStream(InputStream in, CompressionMetadata cm) {
+        this.cm = cm;
+        this.in = in;
+        //chunkLength*2 because there are some cases where the data is larger than specified
+        input = new byte[cm.chunkLength() * 2];
+        buffer = new byte[cm.chunkLength() * 2];
+    }
 
-	/**
-	 * Creates a Snappy input stream to read data from the specified underlying
-	 * input stream.
-	 * 
-	 * @param in
-	 *            the underlying input stream
-	 */
-	public CompressionInputStream(InputStream in, CompressionMetadata cm) throws IOException {
-		this.cm = cm;
-		this.in = in;
-		//chunkLength*2 because there are some cases where the data is larger than specified
-		input = new byte[cm.chunkLength() * 2];
-		buffer = new byte[cm.chunkLength() * 2];
-	}
+    @Override
+    public int available() throws IOException {
+        if (closed) {
+            return 0;
+        }
+        if (valid > position) {
+            return valid - position;
+        }
+        if (cm.currentLength() <= 0) {
+            return 0;
+        }
+        readInput(cm.currentLength());
+        cm.incrementChunk();
+        return valid;
+    }
 
-	@Override
-	public int available() throws IOException {
-		if (closed) {
-			return 0;
-		}
-		if (valid > position) {
-			return valid - position;
-		}
-		if (cm.currentLength() <= 0) {
-			return 0;
-		}
-		readInput(cm.currentLength());
-		cm.incrementChunk();
-		return valid;
-	}
+    @Override
+    public void close() throws IOException {
+        try {
+            in.close();
+        } finally {
+            if (!closed) {
+                closed = true;
+            }
+        }
+    }
 
-	@Override
-	public void close() throws IOException {
-		try {
-			in.close();
-		} finally {
-			if (!closed) {
-				closed = true;
-			}
-		}
-	}
+    private boolean finishedReading() throws IOException {
+        return available() <= 0;
+    }
 
-	private boolean ensureBuffer() throws IOException {
-		if (available() > 0) {
-			return true;
-		}
-		if (eof) {
-			return false;
-		}
+    @Override
+    public int read() throws IOException {
+        if (closed) {
+            return -1;
+        }
+        if (finishedReading()) {
+            return -1;
+        }
+        return buffer[position++] & 0xFF;
+    }
 
-		return false;
-	}
+    @Override
+    public int read(@Nonnull byte[] output, int offset, int length) throws IOException {
+        if (closed) {
+            throw new IOException("Stream is closed");
+        }
 
-	@Override
-	public int read() throws IOException {
-		if (closed) {
-			return -1;
-		}
-		if (!ensureBuffer()) {
-			return -1;
-		}
-		return buffer[position++] & 0xFF;
-	}
+        if (length == 0) {
+            return 0;
+        }
+        if (finishedReading()) {
+            return -1;
+        }
 
-	@Override
-	public int read(byte[] output, int offset, int length) throws IOException {
-		if (output == null) {
-			throw new IOException("output is null");
-		}
-		if (closed) {
-			throw new IOException("Stream is closed");
-		}
+        int size = min(length, available());
+        System.arraycopy(buffer, position, output, offset, size);
+        position += size;
+        return size;
+    }
 
-		if (length == 0) {
-			return 0;
-		}
-		if (!ensureBuffer()) {
-			return -1;
-		}
+    private void readInput(int length) throws IOException {
+        int offset = 0;
+        while (offset < length) {
+            int size = in.read(input, offset, length - offset);
+            if (size == -1) {
+                throw new EOFException("encountered EOF while reading block data");
+            }
+            offset += size;
+        }
+        // ignore checksum for now
+        byte[] checksum = new byte[4];
+        int size = in.read(checksum);
 
-		int size = min(length, available());
-		System.arraycopy(buffer, position, output, offset, size);
-		position += size;
-		return size;
-	}
+        if (size != 4) {
+            throw new EOFException("encountered EOF while reading checksum");
+        }
 
-	private void readInput(int length) throws IOException {
-		int offset = 0;
-		while (offset < length) {
-			int size = in.read(input, offset, length - offset);
-			if (size == -1) {
-				throw new EOFException("encountered EOF while reading block data");
-			}
-			offset += size;
-		}
-		// ignore checksum for now
-		byte[] checksum = new byte[4];
-		int size = in.read(checksum);
-
-		if (size != 4) {
-			throw new EOFException("encountered EOF while reading checksum");
-		}
-
-		valid = cm.compressor().uncompress(input, 0, length, buffer, 0);
-		position = 0;
-	}
+        valid = cm.compressor().uncompress(input, 0, length, buffer, 0);
+        position = 0;
+    }
 
 }

@@ -15,96 +15,131 @@
  */
 package com.netflix.aegisthus.input.readers;
 
-import java.io.DataInputStream;
+import com.netflix.Aegisthus;
+import com.netflix.aegisthus.input.splits.AegSplit;
+import com.netflix.aegisthus.io.sstable.SSTableColumnScanner;
+import com.netflix.aegisthus.io.writable.AegisthusKey;
+import com.netflix.aegisthus.io.writable.AtomWritable;
+import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.hadoop.mapreduce.InputSplit;
+import org.apache.hadoop.mapreduce.RecordReader;
+import org.apache.hadoop.mapreduce.TaskAttemptContext;
+import org.apache.hadoop.mapreduce.TaskInputOutputContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import rx.Observable;
+import rx.exceptions.OnErrorThrowable;
+import rx.functions.Func1;
+
+import javax.annotation.Nonnull;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.ByteBuffer;
+import java.util.Iterator;
 
-import org.apache.cassandra.io.sstable.Descriptor;
-import org.apache.commons.logging.Log;
-import org.apache.commons.logging.LogFactory;
-import org.apache.hadoop.mapreduce.InputSplit;
-import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.TaskInputOutputContext;
+public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable> {
+    private static final Logger LOG = LoggerFactory.getLogger(SSTableRecordReader.class);
+    private long end;
+    private Iterator<AtomWritable> iterator;
+    private AegisthusKey key;
+    private long pos;
+    private SSTableColumnScanner scanner;
+    private long start;
+    private AtomWritable value;
 
-import com.netflix.aegisthus.input.AegSplit;
-import com.netflix.aegisthus.io.sstable.SSTableScanner;
+    @Override
+    public void close() throws IOException {
+        if (scanner != null) {
+            scanner.close();
+        }
+    }
 
-public class SSTableRecordReader extends AegisthusRecordReader {
-	private static final Log LOG = LogFactory.getLog(SSTableRecordReader.class);
-	private SSTableScanner scanner;
-	private boolean outputFile = false;
-	private String filename = null;
-	private long errorRows = 0;
-	@SuppressWarnings("rawtypes")
-	private TaskInputOutputContext context = null;
+    @Override
+    public AegisthusKey getCurrentKey() throws IOException, InterruptedException {
+        return key;
+    }
 
-	@Override
-	public void close() throws IOException {
-		super.close();
-		if (scanner != null) {
-			scanner.close();
-		}
-	}
+    @Override
+    public AtomWritable getCurrentValue() throws IOException, InterruptedException {
+        return value;
+    }
 
-	@SuppressWarnings("rawtypes")
-	@Override
-	public void initialize(InputSplit inputSplit, TaskAttemptContext ctx) throws IOException, InterruptedException {
-		AegSplit split = (AegSplit) inputSplit;
+    @Override
+    public float getProgress() throws IOException, InterruptedException {
+        if (start == end) {
+            return 0.0f;
+        } else {
+            return Math.min(1.0f, (pos - start) / (float) (end - start));
+        }
+    }
 
-		start = split.getStart();
-		//TODO: This has a side effect of setting compressionmetadata. remove this.
-		InputStream is = split.getInput(ctx.getConfiguration());
-		if (split.isCompressed()) {
-			end = split.getCompressionMetadata().getDataLength();
-		} else {
-			end = split.getEnd();
-		}
-		outputFile = ctx.getConfiguration().getBoolean("aegsithus.debug.file", false);
-		filename = split.getPath().toUri().toString();
+    @Override
+    public void initialize(@Nonnull InputSplit inputSplit, @Nonnull final TaskAttemptContext ctx)
+            throws IOException, InterruptedException {
+        AegSplit split = (AegSplit) inputSplit;
 
-		LOG.info(String.format("File: %s", split.getPath().toUri().getPath()));
-		LOG.info("Start: " + start);
-		LOG.info("End: " + end);
-		if (ctx instanceof TaskInputOutputContext) {
-			context = (TaskInputOutputContext) ctx;
-		}
+        start = split.getStart();
+        InputStream is = split.getInput(ctx.getConfiguration());
+        end = split.getDataEnd();
+        String filename = split.getPath().toUri().toString();
 
-		try {
-			scanner = new SSTableScanner(new DataInputStream(is),
-					split.getConvertors(), end, Descriptor.fromFilename(filename).version);
-			if (ctx.getConfiguration().get("aegisthus.maxcolsize") != null) {
-				scanner.setMaxColSize(ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L));
-				LOG.info(String.format("aegisthus.maxcolsize - %d",
-						ctx.getConfiguration().getLong("aegisthus.maxcolsize", -1L)));
-			}
-			scanner.skipUnsafe(start);
-			this.pos = start;
-		} catch (IOException e) {
-			throw new IOError(e);
-		}
-	}
+        LOG.info("File: {}", split.getPath().toUri().getPath());
+        LOG.info("Start: {}", start);
+        LOG.info("End: {}", end);
 
-	@Override
-	public boolean nextKeyValue() throws IOException, InterruptedException {
-		if (pos >= end) {
-			return false;
-		}
-		String json = null;
-		json = scanner.next();
-		pos += scanner.getDatasize();
-		json = json.trim();
-		if (outputFile) {
-			key.set(filename);
-		} else {
-			// a quick hack to pull out the rowkey from the json.
-			key.set(json.substring(2, json.indexOf(':') - 1));
-		}
-		if (context != null && scanner.getErrorRowCount() > errorRows) {
-			errorRows++;
-			context.getCounter("aegisthus", "rowsTooBig").increment(1L);
-		}
-		value.set(json);
-		return true;
-	}
+        try {
+            scanner = new SSTableColumnScanner(is, end, Descriptor.fromFilename(filename).version);
+            LOG.info("skipping to start: {}", start);
+            scanner.skipUnsafe(start);
+            this.pos = start;
+            LOG.info("Creating observable");
+            rx.Observable<AtomWritable> observable = scanner.observable();
+
+            boolean skipRowsWithErrors = ctx.getConfiguration().getBoolean(
+                    Aegisthus.Feature.CONF_SKIP_ROWS_WITH_ERRORS, false);
+            if (skipRowsWithErrors) {
+                observable = observable
+                        .onErrorFlatMap(new Func1<OnErrorThrowable, Observable<? extends AtomWritable>>() {
+                            @Override
+                            public Observable<? extends AtomWritable> call(OnErrorThrowable onErrorThrowable) {
+                                LOG.error("failure deserializing", onErrorThrowable);
+                                if (ctx instanceof TaskInputOutputContext) {
+                                    ctx.getCounter("aegisthus", onErrorThrowable.getCause().getClass().getSimpleName())
+                                            .increment(1L);
+                                }
+                                return Observable.empty();
+                            }
+                        });
+            }
+
+            iterator = observable
+                    .toBlocking()
+                    .toIterable()
+                    .iterator();
+            LOG.info("done initializing");
+        } catch (IOException e) {
+            throw new IOError(e);
+        }
+    }
+
+    @Override
+    public boolean nextKeyValue() throws IOException, InterruptedException {
+        if (!iterator.hasNext()) {
+            return false;
+        }
+
+        value = iterator.next();
+        if (value.getAtom() != null) {
+            key = AegisthusKey.createKeyForRowColumnPair(
+                    ByteBuffer.wrap(value.getKey()),
+                    value.getAtom().name(),
+                    value.getAtom().maxTimestamp()
+            );
+        } else {
+            key = AegisthusKey.createKeyForRow(ByteBuffer.wrap(value.getKey()));
+        }
+
+        return true;
+    }
 }

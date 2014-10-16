@@ -15,16 +15,22 @@
  */
 package com.netflix;
 
-import java.io.IOException;
-import java.nio.ByteBuffer;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-
-import org.apache.cassandra.db.marshal.TypeParser;
-import org.apache.cassandra.exceptions.ConfigurationException;
-import org.apache.cassandra.exceptions.SyntaxException;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.netflix.aegisthus.input.AegisthusInputFormat;
+import com.netflix.aegisthus.io.writable.AegisthusKey;
+import com.netflix.aegisthus.io.writable.AegisthusKeyGroupingComparator;
+import com.netflix.aegisthus.io.writable.AegisthusKeyMapper;
+import com.netflix.aegisthus.io.writable.AegisthusKeyPartitioner;
+import com.netflix.aegisthus.io.writable.AegisthusKeySortingComparator;
+import com.netflix.aegisthus.io.writable.AtomWritable;
+import com.netflix.aegisthus.io.writable.RowWritable;
+import com.netflix.aegisthus.mapreduce.CassSSTableReducer;
+import com.netflix.aegisthus.output.CustomFileNameFileOutputFormat;
+import com.netflix.aegisthus.output.JsonOutputFormat;
+import com.netflix.aegisthus.output.SSTableOutputFormat;
+import com.netflix.aegisthus.tools.DirectoryWalker;
+import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
@@ -32,131 +38,48 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
-import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.Text;
-import org.apache.hadoop.io.WritableComparable;
-import org.apache.hadoop.io.WritableComparator;
+import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.Mapper;
-import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
-import com.netflix.aegisthus.columnar_input.AegisthusInputFormat;
-import com.netflix.aegisthus.input.AegisthusCombinedInputFormat;
-import com.netflix.aegisthus.io.writable.AtomWritable;
-import com.netflix.aegisthus.io.writable.CompositeKey;
-import com.netflix.aegisthus.mapred.reduce.CassReducer;
-import com.netflix.aegisthus.mapred.reduce.CassSSTableReducer;
-import com.netflix.aegisthus.output.AegisthusOutputFormat;
-import com.netflix.aegisthus.tools.DirectoryWalker;
-import com.netflix.aegisthus.tools.StorageHelper;
-import com.netflix.hadoop.output.CleanOutputFormat;
+import java.io.IOException;
+import java.util.List;
+import java.util.Set;
 
 public class Aegisthus extends Configured implements Tool {
-    private static final Logger LOG = LoggerFactory.getLogger(Aegisthus.class);
-    public static class ColumnarMap extends Mapper<CompositeKey, AtomWritable, CompositeKey, AtomWritable> {
-        @Override
-        protected void map(CompositeKey key, AtomWritable value, Context context) throws IOException,
-                InterruptedException {
-            context.write(key, value);
-        }
-    }
-
-    public static class TextMap extends Mapper<Text, Text, Text, Text> {
-        @Override
-        protected void map(Text key, Text value, Context context) throws IOException, InterruptedException {
-            context.write(key, value);
-        }
-    }
-
-    public static class Partition extends Partitioner<CompositeKey, AtomWritable> {
-        @Override
-        public int getPartition(CompositeKey key, AtomWritable value, int numPartitions) {
-            return Math.abs(key.getKey().hashCode() % numPartitions);
-        }
-
-    }
-
-    public static class RowKeyGroupingComparator extends WritableComparator {
-        public RowKeyGroupingComparator() {
-            super(CompositeKey.class, true);
-        }
-
-        @SuppressWarnings("rawtypes")
-        @Override
-        public int compare(WritableComparable wc1, WritableComparable wc2) {
-            CompositeKey ck1 = (CompositeKey) wc1;
-            CompositeKey ck2 = (CompositeKey) wc2;
-            return ck1.getKey().compareTo(ck2.getKey());
-        }
-    }
-
-    public static class CompositeKeyComparator extends WritableComparator implements Configurable {
-        private Comparator<ByteBuffer> comparator;
-        private Configuration conf;
-
-        protected CompositeKeyComparator() {
-            super(CompositeKey.class, true);
-        }
-
-        @SuppressWarnings("rawtypes")
-        @Override
-        public int compare(WritableComparable wc1, WritableComparable wc2) {
-            CompositeKey ck1 = (CompositeKey) wc1;
-            CompositeKey ck2 = (CompositeKey) wc2;
-            ck1.setComparator(comparator);
-            return ck1.compareTo(ck2);
-        }
-
-        @Override
-        public Configuration getConf() {
-            return conf;
-        }
-
-        @Override
-        public void setConf(Configuration conf) {
-            this.conf = conf;
-            String comparatorType = conf.get("aegisthus.columntype");
-            try {
-                comparator = TypeParser.parse(comparatorType);
-            } catch (SyntaxException e) {
-                throw new RuntimeException(e);
-            } catch (ConfigurationException e) {
-                throw new RuntimeException(e);
-            }
-
-        }
-    }
-
-    private static final String OPT_INPUT = "input";
-    private static final String OPT_INPUTDIR = "inputDir";
-    private static final String OPT_OUTPUT = "output";
-    private static final String OPT_PRODUCESSTABLE = "produceSSTable";
+    private Descriptor.Version version;
 
     public static void main(String[] args) throws Exception {
         int res = ToolRunner.run(new Configuration(), new Aegisthus(), args);
 
-        boolean exit = Boolean.valueOf(System.getProperty("aegisthus.exit", "true"));
+        boolean exit = Boolean.valueOf(System.getProperty(Feature.CONF_SYSTEM_EXIT, "true"));
         if (exit) {
             System.exit(res);
-        } else if(res != 0) {
-            throw new RuntimeException("Unexpected exit code");
+        } else if (res != 0) {
+            throw new RuntimeException("aegisthus finished with a non-zero exit code: " + res);
         }
     }
 
-    protected List<Path> getDataFiles(Configuration conf, String dir) throws IOException {
+    private void checkVersionFromFilename(String filename) {
+        Descriptor descriptor = Descriptor.fromFilename(filename);
+
+        if (this.version == null) {
+            this.version = descriptor.version;
+        } else if (!this.version.equals(descriptor.version)) {
+            throw new IllegalStateException("All files must have the same sstable version.  File '" + filename
+                    + "' has version '" + descriptor.version + "' and we have already seen a file with version '"
+                    + version + "'");
+        }
+    }
+
+    List<Path> getDataFiles(Configuration conf, String dir) throws IOException {
         Set<String> globs = Sets.newHashSet();
         List<Path> output = Lists.newArrayList();
         Path dirPath = new Path(dir);
@@ -164,6 +87,7 @@ public class Aegisthus extends Configured implements Tool {
         List<FileStatus> input = Lists.newArrayList(fs.listStatus(dirPath));
         for (String path : DirectoryWalker.with(conf).threaded().addAllStatuses(input).pathsString()) {
             if (path.endsWith("-Data.db")) {
+                checkVersionFromFilename(path);
                 globs.add(path.replaceAll("[^/]+-Data.db", "*-Data.db"));
             }
         }
@@ -174,29 +98,29 @@ public class Aegisthus extends Configured implements Tool {
     }
 
     @SuppressWarnings("static-access")
-    public CommandLine getOptions(String[] args) {
+    CommandLine getOptions(String[] args) {
         Options opts = new Options();
-        opts.addOption(OptionBuilder.withArgName(OPT_INPUT)
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_INPUT_FILE)
                 .withDescription("Each input location")
                 .hasArgs()
-                .create(OPT_INPUT));
-        opts.addOption(OptionBuilder.withArgName(OPT_OUTPUT)
+                .create(Feature.CMD_ARG_INPUT_FILE));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_DIR)
                 .isRequired()
                 .withDescription("output location")
                 .hasArg()
-                .create(OPT_OUTPUT));
-        opts.addOption(OptionBuilder.withArgName(OPT_INPUTDIR)
+                .create(Feature.CMD_ARG_OUTPUT_DIR));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_INPUT_DIR)
                 .withDescription("a directory from which we will recursively pull sstables")
                 .hasArgs()
-                .create(OPT_INPUTDIR));
-        opts.addOption(OptionBuilder.withArgName(OPT_PRODUCESSTABLE)
+                .create(Feature.CMD_ARG_INPUT_DIR));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_PRODUCE_SSTABLE)
                 .withDescription("produces sstable output (default is to produce json)")
-                .create(OPT_PRODUCESSTABLE));
+                .create(Feature.CMD_ARG_PRODUCE_SSTABLE));
         CommandLineParser parser = new GnuParser();
 
         try {
             CommandLine cl = parser.parse(opts, args, true);
-            if (!(cl.hasOption(OPT_INPUT) || cl.hasOption(OPT_INPUTDIR))) {
+            if (!(cl.hasOption(Feature.CMD_ARG_INPUT_FILE) || cl.hasOption(Feature.CMD_ARG_INPUT_DIR))) {
                 System.out.println("Must have either an input or inputDir option");
                 HelpFormatter formatter = new HelpFormatter();
                 formatter.printHelp(String.format("hadoop jar aegisthus.jar %s", Aegisthus.class.getName()), opts);
@@ -209,7 +133,6 @@ public class Aegisthus extends Configured implements Tool {
             formatter.printHelp(String.format("hadoop jar aegisthus.jar %s", Aegisthus.class.getName()), opts);
             return null;
         }
-
     }
 
     @Override
@@ -222,79 +145,82 @@ public class Aegisthus extends Configured implements Tool {
             return 1;
         }
 
-        return cl.hasOption(OPT_PRODUCESSTABLE) ? runColumnar(job, cl) : runJson(job, cl);
-    }
+        // Check all of the paths and load the sstable version from the input filenames
+        List<Path> paths = Lists.newArrayList();
+        if (cl.hasOption(Feature.CMD_ARG_INPUT_FILE)) {
+            for (String input : cl.getOptionValues(Feature.CMD_ARG_INPUT_FILE)) {
+                checkVersionFromFilename(input);
+                paths.add(new Path(input));
+            }
+        }
+        if (cl.hasOption(Feature.CMD_ARG_INPUT_DIR)) {
+            paths.addAll(getDataFiles(job.getConfiguration(), cl.getOptionValue(Feature.CMD_ARG_INPUT_DIR)));
+        }
 
-    public int runColumnar(Job job, CommandLine cl) throws Exception {
+        // At this point we have the version of sstable that we can use for this run
+        job.getConfiguration().set(Feature.CONF_SSTABLE_VERSION, version.toString());
+
         job.setInputFormatClass(AegisthusInputFormat.class);
-        job.setMapOutputKeyClass(CompositeKey.class);
+        job.setMapOutputKeyClass(AegisthusKey.class);
         job.setMapOutputValueClass(AtomWritable.class);
-        job.setOutputFormatClass(CleanOutputFormat.class);
-        job.setMapperClass(ColumnarMap.class);
+        job.setOutputKeyClass(BytesWritable.class);
+        job.setOutputValueClass(RowWritable.class);
+        job.setMapperClass(AegisthusKeyMapper.class);
         job.setReducerClass(CassSSTableReducer.class);
-        job.setGroupingComparatorClass(RowKeyGroupingComparator.class);
-        job.setPartitionerClass(Partition.class);
-        job.setSortComparatorClass(CompositeKeyComparator.class);
+        job.setGroupingComparatorClass(AegisthusKeyGroupingComparator.class);
+        job.setPartitionerClass(AegisthusKeyPartitioner.class);
+        job.setSortComparatorClass(AegisthusKeySortingComparator.class);
 
-        List<Path> paths = Lists.newArrayList();
-        if (cl.hasOption(OPT_INPUT)) {
-            for (String input : cl.getOptionValues(OPT_INPUT)) {
-                paths.add(new Path(input));
-            }
-        }
-        if (cl.hasOption(OPT_INPUTDIR)) {
-            paths.addAll(getDataFiles(job.getConfiguration(), cl.getOptionValue(OPT_INPUTDIR)));
-        }
         TextInputFormat.setInputPaths(job, paths.toArray(new Path[paths.size()]));
-        Path temp = new Path("/tmp/" + UUID.randomUUID());
-        TextOutputFormat.setOutputPath(job, temp);
 
-        StorageHelper sh = new StorageHelper(job.getConfiguration());
-        sh.setFinalPath(cl.getOptionValue(OPT_OUTPUT));
-        LOG.info("temp location for job: {}", sh.getBaseTempLocation());
+        if (cl.hasOption(Feature.CMD_ARG_PRODUCE_SSTABLE)) {
+            job.setOutputFormatClass(SSTableOutputFormat.class);
+        } else {
+            job.setOutputFormatClass(JsonOutputFormat.class);
+        }
+        CustomFileNameFileOutputFormat.setOutputPath(job, new Path(cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DIR)));
 
         job.submit();
         System.out.println(job.getJobID());
         System.out.println(job.getTrackingURL());
         boolean success = job.waitForCompletion(true);
-        FileSystem fs = temp.getFileSystem(job.getConfiguration());
-        if (fs.exists(temp)) {
-            fs.delete(temp, true);
-        }
         return success ? 0 : 1;
     }
 
-    public int runJson(Job job, CommandLine cl) throws Exception {
-        job.getConfiguration().set("aeg.temp.dir", "/tmp/" + UUID.randomUUID());
-        Path temp = new Path(job.getConfiguration().get("aeg.temp.dir"));
-        FileSystem fs = temp.getFileSystem(job.getConfiguration());
-        fs.mkdirs(temp);
+    public static final class Feature {
+        public static final String CMD_ARG_INPUT_DIR = "inputDir";
+        public static final String CMD_ARG_INPUT_FILE = "input";
+        public static final String CMD_ARG_OUTPUT_DIR = "output";
+        public static final String CMD_ARG_PRODUCE_SSTABLE = "produceSSTable";
 
-        job.setInputFormatClass(AegisthusCombinedInputFormat.class);
-        job.setMapOutputKeyClass(Text.class);
-        job.setMapOutputValueClass(Text.class);
-        job.setOutputFormatClass(AegisthusOutputFormat.class);
-        job.setMapperClass(TextMap.class);
-        job.setReducerClass(CassReducer.class);
-        List<Path> paths = Lists.newArrayList();
-        if (cl.hasOption(OPT_INPUT)) {
-            for (String input : cl.getOptionValues(OPT_INPUT)) {
-                job.getConfiguration().set("aegisthus.json.dir", input.replace("/*.gz", ""));
-                paths.add(new Path(input));
-            }
-        }
-        if (cl.hasOption(OPT_INPUTDIR)) {
-            paths.addAll(getDataFiles(job.getConfiguration(), cl.getOptionValue(OPT_INPUTDIR)));
-        }
-        TextInputFormat.setInputPaths(job, paths.toArray(new Path[paths.size()]));
-        AegisthusOutputFormat.setOutputPath(job, new Path(cl.getOptionValue(OPT_OUTPUT)));
-
-        job.submit();
-        System.out.println(job.getJobID());
-        System.out.println(job.getTrackingURL());
-
-        boolean success = job.waitForCompletion(true);
-        fs.delete(temp, true);
-        return success ? 0 : 1;
+        /**
+         * The column type, used for sorting columns in all output formats and also in the JSON output format. The
+         * default is BytesType.
+         */
+        public static final String CONF_COLUMNTYPE = "aegisthus.columntype";
+        /**
+         * The converter to use for the column value, used in the JSON output format. The default is BytesType.
+         */
+        public static final String CONF_COLUMN_VALUE_TYPE = "aegisthus.column_value_type";
+        /**
+         * Name of the keyspace and dataset to use for the output sstable file name. The default is "keyspace-dataset".
+         */
+        public static final String CONF_DATASET = "aegisthus.dataset";
+        /**
+         * The converter to use for the key, used in the JSON output format. The default is BytesType.
+         */
+        public static final String CONF_KEYTYPE = "aegisthus.keytype";
+        /**
+         * Should aegisthus try to skip rows with errors.  Defaults to false.  (untested)
+         */
+        public static final String CONF_SKIP_ROWS_WITH_ERRORS = "aegisthus.skip_rows_with_errors";
+        /**
+         * The version of SSTable to input and output.
+         */
+        public static final String CONF_SSTABLE_VERSION = "aegisthus.version_of_sstable";
+        /**
+         * Configures if the System.exit should be called to end the processing in main.  Defaults to true.
+         */
+        public static final String CONF_SYSTEM_EXIT = "aegisthus.exit";
     }
 }
