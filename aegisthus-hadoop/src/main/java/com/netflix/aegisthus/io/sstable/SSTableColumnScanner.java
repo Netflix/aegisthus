@@ -61,7 +61,7 @@ public class SSTableColumnScanner {
     }
 
     void deserialize(Subscriber<? super AtomWritable> subscriber) {
-        LOG.info("current pos({}) done ({})", pos, hasMore() ? "has more" : "no more");
+        LOG.debug("current pos({}) done ({})", pos, hasMore() ? "has more" : "no more");
         while (hasMore()) {
             try {
                 int keysize = input.readUnsignedShort();

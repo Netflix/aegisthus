@@ -97,6 +97,9 @@ project(':aegisthus-hadoop') {
         includeInJar 'com.netflix.rxjava:rxjava-core:0.19.6'
         includeInJar 'org.apache.cassandra:cassandra-all:2.0.10'
         includeInJar 'org.apache.thrift:libthrift:0.9.1'
+        includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
+        includeInJar 'net.jpountz.lz4:lz4:1.2.0'
+        includeInJar 'org.apache.commons:commons-lang3:3.1'
 
         includeHadoopLibs(project)
 
