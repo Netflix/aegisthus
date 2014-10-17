@@ -30,6 +30,8 @@ import com.netflix.aegisthus.output.CustomFileNameFileOutputFormat;
 import com.netflix.aegisthus.output.JsonOutputFormat;
 import com.netflix.aegisthus.output.SSTableOutputFormat;
 import com.netflix.aegisthus.tools.DirectoryWalker;
+import com.netflix.aegisthus.util.CFMetadataUtility;
+import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -48,12 +50,16 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
 public class Aegisthus extends Configured implements Tool {
+    private static final Logger LOG = LoggerFactory.getLogger(Aegisthus.class);
+
     private Descriptor.Version version;
 
     public static void main(String[] args) throws Exception {
@@ -77,6 +83,17 @@ public class Aegisthus extends Configured implements Tool {
                     + "' has version '" + descriptor.version + "' and we have already seen a file with version '"
                     + version + "'");
         }
+    }
+
+    private void setConfigurationFromCql(Configuration conf) {
+        CFMetaData cfMetaData = CFMetadataUtility.initializeCfMetaData(conf);
+        String keyType = cfMetaData.getKeyValidator().toString();
+        String columnType = cfMetaData.comparator.toString();
+
+        LOG.info("From CQL3, setting keyType({}) and columnType({}).", keyType, columnType);
+
+        conf.set(Feature.CONF_KEYTYPE, keyType);
+        conf.set(Feature.CONF_COLUMNTYPE, columnType);
     }
 
     List<Path> getDataFiles(Configuration conf, String dir) throws IOException {
@@ -160,6 +177,10 @@ public class Aegisthus extends Configured implements Tool {
         // At this point we have the version of sstable that we can use for this run
         job.getConfiguration().set(Feature.CONF_SSTABLE_VERSION, version.toString());
 
+        if (job.getConfiguration().get(Feature.CONF_CQL_SCHEMA) != null) {
+            setConfigurationFromCql(job.getConfiguration());
+        }
+
         job.setInputFormatClass(AegisthusInputFormat.class);
         job.setMapOutputKeyClass(AegisthusKey.class);
         job.setMapOutputValueClass(AtomWritable.class);
@@ -222,5 +243,9 @@ public class Aegisthus extends Configured implements Tool {
          * Configures if the System.exit should be called to end the processing in main.  Defaults to true.
          */
         public static final String CONF_SYSTEM_EXIT = "aegisthus.exit";
+        /**
+         * The CQL "Create Table" statement that defines the schema of the input sstables.
+         */
+        public static final String CONF_CQL_SCHEMA = "aegisthus.cql_schema";
     }
 }
