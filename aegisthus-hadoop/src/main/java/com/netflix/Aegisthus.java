@@ -211,9 +211,17 @@ public class Aegisthus extends Configured implements Tool {
          */
         public static final String CONF_KEYTYPE = "aegisthus.keytype";
         /**
+         * Earlier versions of Aegisthus did extra formatting on just the column name.  This defaults to false.
+         */
+        public static final String CONF_LEGACY_COLUMN_NAME_FORMATTING = "aegisthus.legacy_column_name_formatting";
+        /**
          * Should aegisthus try to skip rows with errors.  Defaults to false.  (untested)
          */
         public static final String CONF_SKIP_ROWS_WITH_ERRORS = "aegisthus.skip_rows_with_errors";
+        /**
+         * Sort the columns by name rather than by the order in Cassandra.  This defaults to false.
+         */
+        public static final String CONF_SORT_COLUMNS_BY_NAME = "aegisthus.sort_columns_by_name";
         /**
          * The version of SSTable to input and output.
          */

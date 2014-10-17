@@ -2,10 +2,10 @@ package com.netflix.aegisthus.output;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.google.common.base.Charsets;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import com.netflix.Aegisthus;
+import com.netflix.aegisthus.io.writable.AegisthusKeySortingComparator;
 import com.netflix.aegisthus.io.writable.RowWritable;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.CounterColumn;
@@ -20,6 +20,7 @@ import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.cassandra.serializers.MarshalException;
 import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.BytesWritable;
@@ -30,7 +31,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.io.OutputStreamWriter;
 import java.nio.ByteBuffer;
 import java.text.NumberFormat;
 
@@ -68,18 +68,18 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
     public RecordWriter<BytesWritable, RowWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
         // No extension on the aeg json format files for historical reasons
         Path workFile = getDefaultWorkFile(context, "");
-        FileSystem fs = workFile.getFileSystem(context.getConfiguration());
-        final OutputStreamWriter writer = new OutputStreamWriter(fs.create(workFile, false), Charsets.UTF_8);
+        Configuration conf = context.getConfiguration();
+        FileSystem fs = workFile.getFileSystem(conf);
+        final FSDataOutputStream outputStream = fs.create(workFile, false);
         final JsonFactory jsonFactory = new JsonFactory();
-        final AbstractType<ByteBuffer> keyNameConverter = getConverter(
-                context.getConfiguration(), Aegisthus.Feature.CONF_KEYTYPE
-        );
-        final AbstractType<ByteBuffer> columnNameConverter = getConverter(
-                context.getConfiguration(), Aegisthus.Feature.CONF_COLUMNTYPE
-        );
+        final AbstractType<ByteBuffer> keyNameConverter = getConverter(conf, Aegisthus.Feature.CONF_KEYTYPE);
+        final AbstractType<ByteBuffer> columnNameConverter = getConverter(conf, Aegisthus.Feature.CONF_COLUMNTYPE);
         final AbstractType<ByteBuffer> columnValueConverter = getConverter(
-                context.getConfiguration(), Aegisthus.Feature.CONF_COLUMN_VALUE_TYPE
+                conf,
+                Aegisthus.Feature.CONF_COLUMN_VALUE_TYPE
         );
+        final boolean legacyColumnNameFormatting =
+                conf.getBoolean(Aegisthus.Feature.CONF_LEGACY_COLUMN_NAME_FORMATTING, false);
 
         return new RecordWriter<BytesWritable, RowWritable>() {
             private int errorLogCount = 0;
@@ -102,13 +102,12 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
 
             @Override
             public void write(BytesWritable key, RowWritable rowWritable) throws IOException, InterruptedException {
-                JsonGenerator jsonGenerator = jsonFactory.createGenerator(writer);
+                JsonGenerator jsonGenerator = jsonFactory.createGenerator(outputStream);
                 jsonGenerator.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 
                 String keyName = getString(keyNameConverter, key.getBytes());
-                writer.write(keyName);
-
-                writer.write('\t');
+                outputStream.writeBytes(keyName);
+                outputStream.writeByte('\t');
 
                 jsonGenerator.writeStartObject();
                 jsonGenerator.writeObjectFieldStart(keyName);
@@ -117,7 +116,11 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
                 for (OnDiskAtom atom : rowWritable.getColumns()) {
                     if (atom instanceof Column) {
                         jsonGenerator.writeStartArray();
-                        jsonGenerator.writeString(getString(columnNameConverter, atom.name()));
+                        String columnName = getString(columnNameConverter, atom.name());
+                        if (legacyColumnNameFormatting) {
+                            columnName = AegisthusKeySortingComparator.legacyColumnNameFormat(columnName);
+                        }
+                        jsonGenerator.writeString(columnName);
                         jsonGenerator.writeString(getString(columnValueConverter, ((Column) atom).value()));
                         jsonGenerator.writeNumber(((Column) atom).timestamp());
 
@@ -143,12 +146,12 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
                 jsonGenerator.writeEndObject(); // Outer json
                 jsonGenerator.close();
 
-                writer.write('\n');
+                outputStream.writeByte('\n');
             }
 
             @Override
             public void close(TaskAttemptContext context) throws IOException, InterruptedException {
-                writer.close();
+                outputStream.close();
             }
         };
     }
