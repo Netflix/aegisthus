@@ -50,13 +50,40 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 
 public class Aegisthus extends Configured implements Tool {
     private Descriptor.Version version;
 
+    private static void logAegisthusVersion() {
+        String classPath = Aegisthus.class.getResource("Aegisthus.class").toString();
+        String manifestPath = classPath.replace("com/netflix/Aegisthus.class", "META-INF/MANIFEST.MF");
+        try (InputStream inputStream = new URL(manifestPath).openStream()) {
+            Manifest manifest = new Manifest(inputStream);
+            Attributes attr = manifest.getMainAttributes();
+            System.out.println("Running Aegisthus version " +
+                            attr.getValue("Implementation-Version") +
+                            " built from change " +
+                            attr.getValue("Change") +
+                            " on host " +
+                            attr.getValue("Build-Host") +
+                            " on " +
+                            attr.getValue("Build-Date") +
+                            " with Java " +
+                            attr.getValue("Build-Java-Version")
+            );
+        } catch (IOException ignored) {
+            System.out.println("Unable to locate Aegisthus manifest file");
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+        logAegisthusVersion();
         int res = ToolRunner.run(new Configuration(), new Aegisthus(), args);
 
         boolean exit = Boolean.valueOf(System.getProperty(Feature.CONF_SYSTEM_EXIT, "true"));
