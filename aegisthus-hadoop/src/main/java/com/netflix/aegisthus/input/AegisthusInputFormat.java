@@ -71,7 +71,7 @@ public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWrit
 
         Path compressionPath = new Path(path.getParent(), path.getName().replaceAll("-Data.db", "-CompressionInfo.db"));
         if (fs.exists(compressionPath)) {
-            return ImmutableList.of((InputSplit) AegCompressedSplit.createAegCompressedSplit(path, length, length,
+            return ImmutableList.of((InputSplit) AegCompressedSplit.createAegCompressedSplit(path, 0, length,
                     blkLocations[blkLocations.length - 1].getHosts(), compressionPath));
         }
 
