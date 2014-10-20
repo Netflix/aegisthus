@@ -23,6 +23,7 @@ allprojects {
         includeInJar
     }
     repositories {
+        mavenLocal()
         mavenCentral()
     }
     tasks.withType(JavaCompile) {

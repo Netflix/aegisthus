@@ -8,29 +8,39 @@ import org.apache.cassandra.cql3.CFDefinition;
 import org.apache.cassandra.cql3.statements.ColumnGroupMap;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
-import org.apache.cassandra.db.marshal.CollectionType;
-import org.apache.cassandra.db.marshal.CompositeType;
+import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.cassandra.utils.Pair;
-import org.apache.hadoop.io.Text;
+import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hive.hcatalog.common.HCatException;
+import org.apache.hive.hcatalog.data.DefaultHCatRecord;
+import org.apache.hive.hcatalog.data.HCatRecord;
+import org.apache.hive.hcatalog.data.schema.HCatSchema;
+import org.apache.hive.hcatalog.mapreduce.HCatOutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.List;
+import java.util.UUID;
 
-public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, Text, Text> {
+public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, DefaultHCatRecord> {
     private static final Logger LOG = LoggerFactory.getLogger(CQLMapper.class);
 
     ColumnGroupMap.Builder cgmBuilder;
     CFMetaData cfMetaData;
     CFDefinition cfDef;
-    ByteBuffer currentKey = null;
+    ByteBuffer currentKey;
+
+    HCatSchema hSchema;
+    int numberOfColumns;
 
     @Override protected void setup(
             Context context)
             throws IOException, InterruptedException {
+        hSchema = HCatOutputFormat.getTableSchema(context.getConfiguration());
+        numberOfColumns = hSchema.getFieldNames().size();
+
         cfMetaData = CFMetadataUtility.initializeCfMetaData(context.getConfiguration());
         cfDef = cfMetaData.getCfDef();
         initBuilder();
@@ -90,70 +100,91 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, Text, Text> {
                         ? ((CompositeType) cfMetaData.getKeyValidator()).split(currentKey)
                         : new ByteBuffer[] { currentKey };
 
-        // TODO(danchia): handle static groups
+        ColumnGroupMap staticGroup = ColumnGroupMap.EMPTY;
+        if (!cgmBuilder.isEmpty() && cgmBuilder.firstGroup().isStatic) {
+            staticGroup = cgmBuilder.firstGroup();
+            cgmBuilder.discardFirst();
+
+            // Special case: if there are no rows, but only the static values, just flush the static values.
+            if (cgmBuilder.isEmpty()) {
+                handleGroup(context, ColumnGroupMap.EMPTY, keyComponents, staticGroup);
+            }
+        }
 
         for (ColumnGroupMap group : cgmBuilder.groups()) {
-            handleGroup(context, group, keyComponents);
+            handleGroup(context, group, keyComponents, staticGroup);
         }
 
         initBuilder();
         currentKey = null;
     }
 
-    private void handleGroup(Context context, ColumnGroupMap group, ByteBuffer[] keyComponents)
+    private void handleGroup(Context context, ColumnGroupMap group, ByteBuffer[] keyComponents, ColumnGroupMap staticGroup)
             throws IOException, InterruptedException {
-        StringBuilder strBuilder = new StringBuilder();
+        DefaultHCatRecord record = new DefaultHCatRecord(numberOfColumns);
 
         // write out partition keys
         for (CFDefinition.Name name : cfDef.partitionKeys()) {
-            strBuilder.append("[")
-                    .append(name.name.toString())
-                    .append(":")
-                    .append(name.type.compose(keyComponents[name.position]))
-                    .append("]");
+            addCqlValueToRecord(record, name, keyComponents[name.position]);
         }
-
-        strBuilder.append("|");
 
         // write out clustering columns
         for (CFDefinition.Name name : cfDef.clusteringColumns()) {
-            strBuilder.append("[")
-                    .append(name.name.toString())
-                    .append(":")
-                    .append(name.type.compose(group.getKeyComponent(name.position)))
-                    .append("]");
+            addCqlValueToRecord(record, name, group.getKeyComponent(name.position));
         }
-
-        strBuilder.append("|");
 
         // regular columns
         for (CFDefinition.Name name : cfDef.regularColumns()) {
-            addValue(strBuilder, name, group);
+            addValue(record, name, group);
         }
 
-        context.write(new Text(""), new Text(strBuilder.toString()));
+        // static columns
+        for (CFDefinition.Name name : cfDef.staticColumns()) {
+            addValue(record, name, staticGroup);
+        }
+
+        LOG.info("record is {}", record);
+
+        context.write(new IntWritable(currentKey.hashCode()), record);
     }
 
     /* adapted from org.apache.cassandra.cql3.statements.SelectStatement.addValue */
-    private void addValue(StringBuilder strBuilder, CFDefinition.Name name, ColumnGroupMap group) {
-        String value = "NULL";
-
-        if (group == null) {
-            value = "NULL";
-        } else if (name.type.isCollection()) {
+    private void addValue(HCatRecord record, CFDefinition.Name name, ColumnGroupMap group) throws HCatException {
+        if (name.type.isCollection()) {
             // TODO(danchia): support collections
             throw new RuntimeException("Collections not supported yet.");
         } else {
             Column c = group.getSimple(name.name.key);
-            if (c != null) {
-                value = name.type.compose(c.value()).toString();
-            }
+            addCqlValueToRecord(record, name, (c == null) ? null : c.value());
+        }
+    }
+
+    private void addCqlValueToRecord(HCatRecord record, CFDefinition.Name name, ByteBuffer value) throws HCatException {
+        if (value == null) {
+            record.set(name.name.toString(), hSchema, null);
+            return;
         }
 
-        strBuilder.append("[")
-                .append(name.name.toString())
-                .append(":")
-                .append(value)
-                .append("]");
+        AbstractType<?> type = name.type;
+        Object valueDeserialized = type.compose(value);
+
+        AbstractType<?> baseType = (type instanceof ReversedType<?>)
+                ? ((ReversedType<?>) type).baseType
+                : type;
+
+        /* special case some unsupported CQL3 types to Hive types. */
+        if (baseType instanceof UUIDType || baseType instanceof TimeUUIDType) {
+            valueDeserialized = ((UUID) valueDeserialized).toString();
+        } else if (baseType instanceof BytesType) {
+            ByteBuffer buffer = (ByteBuffer) valueDeserialized;
+            byte[] data = new byte[buffer.remaining()];
+            buffer.get(data);
+
+            valueDeserialized = data;
+        }
+
+        LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
+
+        record.set(name.name.toString(), hSchema, valueDeserialized);
     }
 }

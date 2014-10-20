@@ -4,17 +4,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.AegisthusInputFormat;
-import com.netflix.aegisthus.io.writable.AegisthusKey;
-import com.netflix.aegisthus.io.writable.AegisthusKeyGroupingComparator;
-import com.netflix.aegisthus.io.writable.AegisthusKeyMapper;
-import com.netflix.aegisthus.io.writable.AegisthusKeyPartitioner;
-import com.netflix.aegisthus.io.writable.AegisthusKeySortingComparator;
-import com.netflix.aegisthus.io.writable.AtomWritable;
-import com.netflix.aegisthus.io.writable.RowWritable;
-import com.netflix.aegisthus.mapreduce.CassSSTableReducer;
-import com.netflix.aegisthus.output.CustomFileNameFileOutputFormat;
-import com.netflix.aegisthus.output.JsonOutputFormat;
-import com.netflix.aegisthus.output.SSTableOutputFormat;
 import com.netflix.aegisthus.tools.DirectoryWalker;
 import com.netflix.aegisthus.util.CFMetadataUtility;
 import org.apache.cassandra.config.CFMetaData;
@@ -31,13 +20,16 @@ import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
+import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
+import org.apache.hive.hcatalog.data.DefaultHCatRecord;
+import org.apache.hive.hcatalog.mapreduce.HCatOutputFormat;
+import org.apache.hive.hcatalog.mapreduce.OutputJobInfo;
 import org.coursera.mapreducer.CQLMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +42,16 @@ public class SSTableExport extends Configured implements Tool {
     private static final Logger LOG = LoggerFactory.getLogger(SSTableExport.class);
 
     private Descriptor.Version version;
+
+    public static class Reducer extends org.apache.hadoop.mapreduce.Reducer<IntWritable, DefaultHCatRecord, Text, DefaultHCatRecord> {
+        @Override protected void reduce(IntWritable key, Iterable<DefaultHCatRecord> values,
+                Context context)
+                throws IOException, InterruptedException {
+            for (DefaultHCatRecord v : values) {
+                context.write(null, v);
+            }
+        }
+    }
 
     public static void main(String[] args) throws Exception {
         int res = ToolRunner.run(new Configuration(), new SSTableExport(), args);
@@ -110,15 +112,15 @@ public class SSTableExport extends Configured implements Tool {
                 .withDescription("Each input location")
                 .hasArgs()
                 .create(Feature.CMD_ARG_INPUT_FILE));
-        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_DIR)
-                .isRequired()
-                .withDescription("output location")
-                .hasArg()
-                .create(Feature.CMD_ARG_OUTPUT_DIR));
         opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_INPUT_DIR)
                 .withDescription("a directory from which we will recursively pull sstables")
                 .hasArgs()
                 .create(Feature.CMD_ARG_INPUT_DIR));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_TABLE)
+                .withDescription("hive table to output to")
+                .isRequired()
+                .hasArgs()
+                .create(Feature.CMD_ARG_OUTPUT_TABLE));
         CommandLineParser parser = new GnuParser();
 
         try {
@@ -168,14 +170,18 @@ public class SSTableExport extends Configured implements Tool {
         }
 
         job.setInputFormatClass(AegisthusInputFormat.class);
-        job.setOutputFormatClass(TextOutputFormat.class);
-        job.setOutputKeyClass(Text.class);
-        job.setOutputValueClass(Text.class);
+        job.setOutputFormatClass(HCatOutputFormat.class);
         job.setMapperClass(CQLMapper.class);
+        job.setMapOutputKeyClass(IntWritable.class);
+        job.setMapOutputValueClass(DefaultHCatRecord.class);
+        job.setReducerClass(Reducer.class);
+
+        HCatOutputFormat.setOutput(
+                job,
+                OutputJobInfo.create("default", cl.getOptionValue(Feature.CMD_ARG_OUTPUT_TABLE), null));
+        HCatOutputFormat.setSchema(job, HCatOutputFormat.getTableSchema(job.getConfiguration()));
 
         TextInputFormat.setInputPaths(job, paths.toArray(new Path[paths.size()]));
-
-        CustomFileNameFileOutputFormat.setOutputPath(job, new Path(cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DIR)));
 
         job.submit();
         System.out.println(job.getJobID());
@@ -187,6 +193,6 @@ public class SSTableExport extends Configured implements Tool {
     public static final class Feature {
         public static final String CMD_ARG_INPUT_DIR = "inputDir";
         public static final String CMD_ARG_INPUT_FILE = "input";
-        public static final String CMD_ARG_OUTPUT_DIR = "output";
+        public static final String CMD_ARG_OUTPUT_TABLE = "outputTable";
     }
 }
