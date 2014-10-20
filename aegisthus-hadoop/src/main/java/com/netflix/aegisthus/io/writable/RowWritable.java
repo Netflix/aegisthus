@@ -74,10 +74,7 @@ public class RowWritable implements Writable, Configurable {
         columns = Lists.newArrayListWithCapacity(columnCount);
         for (int i = 0; i < columnCount; i++) {
             OnDiskAtom atom = serializer.deserializeFromSSTable(
-                    in,
-                    ColumnSerializer.Flag.PRESERVE_SIZE,
-                    Integer.MIN_VALUE,
-                    version
+                    in, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version
             );
             columns.add(atom);
         }

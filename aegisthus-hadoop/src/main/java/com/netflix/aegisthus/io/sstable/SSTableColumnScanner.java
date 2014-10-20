@@ -16,6 +16,7 @@
 package com.netflix.aegisthus.io.sstable;
 
 import com.netflix.aegisthus.io.writable.AtomWritable;
+import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.ColumnSerializer.CorruptColumnException;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.BytesType;
@@ -117,7 +118,9 @@ public class SSTableColumnScanner {
         int actualColumnCount = 0;
         for (int i = 0; i < count; i++, actualColumnCount++) {
             // serialize columns
-            OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
+            OnDiskAtom atom = serializer.deserializeFromSSTable(
+                    columns,ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version
+            );
             if (atom == null) {
                 // If atom was null that means this was a version that does not have version.hasRowSizeAndColumnCount
                 // So we have to add the size for the end of row marker also
