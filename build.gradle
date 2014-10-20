@@ -97,6 +97,8 @@ project(':aegisthus-hadoop') {
         includeInJar 'com.netflix.rxjava:rxjava-core:0.19.6'
         includeInJar 'org.apache.cassandra:cassandra-all:2.0.10'
 
+        compile 'org.apache.hive.hcatalog:hive-hcatalog-core:0.13.1'
+
         // cassandra selected transitive deps
         includeInJar 'org.apache.thrift:libthrift:0.9.1'
         includeInJar 'org.xerial.snappy:snappy-java:1.0.4.1'
