@@ -154,11 +154,12 @@ class AegisthusIntegrationSpec extends Specification {
         expectedOutput.text == actualOutput.text
 
         where:
-        inputDirectory                                                | outputFileName | expectedOutput
-        getResourceDirectory("/testdata/1.2.18/randomtable/input")    | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/1.2.18/rangetombstone/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/randomtable/input")    | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/rangetombstone/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
+        inputDirectory                                                        | outputFileName | expectedOutput
+        getResourceDirectory("/testdata/1.2.18/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/1.2.18/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
     }
 
     @Unroll('Read sstables from cassandra and compact them with aegisthus and generate aegisthus json output from the compacted tables')
@@ -182,10 +183,11 @@ class AegisthusIntegrationSpec extends Specification {
         expectedOutput.text == actualOutput.text
 
         where:
-        inputDirectory                                                | outputSSTableFileName                    | outputJsonFileName | expectedOutput
-        getResourceDirectory("/testdata/1.2.18/randomtable/input")    | 'keyspace-dataset-ic-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/1.2.18/rangetombstone/input") | 'keyspace-dataset-ic-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/randomtable/input")    | 'keyspace-dataset-jb-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/rangetombstone/input") | 'keyspace-dataset-jb-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
+        inputDirectory                                                        | outputSSTableFileName                    | outputJsonFileName | expectedOutput
+        getResourceDirectory("/testdata/1.2.18/randomtable/input")            | 'keyspace-dataset-ic-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/1.2.18/rangetombstone/input")         | 'keyspace-dataset-ic-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10/randomtable/input")            | 'keyspace-dataset-jb-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input") | 'keyspace-dataset-jb-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.0.10/rangetombstone/input")         | 'keyspace-dataset-jb-0000000000-Data.db' | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
     }
 }
