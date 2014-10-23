@@ -221,6 +221,11 @@ public class Aegisthus extends Configured implements Tool {
         public static final String CMD_ARG_PRODUCE_SSTABLE = "produceSSTable";
 
         /**
+         * If set this is the blocksize aegisthus will use when splitting input files otherwise the hadoop vaule will
+         * be used.
+         */
+        public static final String CONF_BLOCKSIZE = "aegisthus.blocksize";
+        /**
          * The column type, used for sorting columns in all output formats and also in the JSON output format. The
          * default is BytesType.
          */

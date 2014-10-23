@@ -115,10 +115,11 @@ class AegisthusIntegrationSpec extends Specification {
         // After storing the name of the directory we delete it so it will not exists when Aegisthus runs
         outputDir.delete()
 
-        def aegisthusCommandLine = [
-                'aegisthus',
-                '-output', outdirAbsolutePath
-        ]
+        def aegisthusCommandLine = ['aegisthus']
+
+        if (input.forceSplittingInput) {
+            aegisthusCommandLine << '-D' << "${Aegisthus.Feature.CONF_BLOCKSIZE}=1024"
+        }
 
         if (inputDirectory) {
             aegisthusCommandLine << '-inputDir' << inputDirectory.absolutePath
@@ -129,6 +130,9 @@ class AegisthusIntegrationSpec extends Specification {
         if (input.containsKey('produceSSTable')) {
             aegisthusCommandLine << '-produceSSTable'
         }
+
+        aegisthusCommandLine << '-output' << outdirAbsolutePath
+
         LOG.info("Running aegisthus: {}", aegisthusCommandLine)
 
         def programDriver = new ProgramDriver()
@@ -144,8 +148,9 @@ class AegisthusIntegrationSpec extends Specification {
     def 'test sstable to json'() {
         when: 'aegisthus is run'
         def actualOutput = runAegisthusAndReturnOutputFile([
-                inputDirectory: inputDirectory,
-                outputFileName: outputFileName
+                inputDirectory     : inputDirectory,
+                outputFileName     : outputFileName,
+                forceSplittingInput: forceSplittingInput
         ])
 
         then: 'and the output should match the expected json output'
@@ -154,12 +159,12 @@ class AegisthusIntegrationSpec extends Specification {
         expectedOutput.text == actualOutput.text
 
         where:
-        inputDirectory                                                        | outputFileName | expectedOutput
-        getResourceDirectory("/testdata/1.2.18/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/1.2.18/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')
-        getResourceDirectory("/testdata/2.0.10/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
+        inputDirectory                                                        | outputFileName | expectedOutput                                                                                         | forceSplittingInput
+        getResourceDirectory("/testdata/1.2.18/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/randomtable/aeg_json_output"), 'aeg-00000')            | true
+        getResourceDirectory("/testdata/1.2.18/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')         | false
+        getResourceDirectory("/testdata/2.0.10/randomtable/input")            | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')            | true
+        getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000') | false
+        getResourceDirectory("/testdata/2.0.10/rangetombstone/input")         | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')         | false
     }
 
     @Unroll('Read sstables from cassandra and compact them with aegisthus and generate aegisthus json output from the compacted tables')
