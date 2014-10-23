@@ -52,8 +52,6 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
     @Override protected void map(AegisthusKey key, AtomWritable value,
             Context context)
             throws IOException, InterruptedException {
-        LOG.info("Looking at key {}", ByteBufferUtil.string(key.getKey()));
-
         if (currentKey == null) {
             currentKey = key.getKey();
         } else if (!currentKey.equals(key.getKey())) {
@@ -143,8 +141,6 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
             addValue(record, name, staticGroup);
         }
 
-        LOG.info("record is {}", record);
-
         context.write(new IntWritable(currentKey.hashCode()), record);
     }
 
@@ -183,7 +179,7 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
             valueDeserialized = data;
         }
 
-        LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
+        //LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
 
         record.set(name.name.toString(), hSchema, valueDeserialized);
     }
