@@ -121,6 +121,11 @@ public class SSTableExport extends Configured implements Tool {
                 .isRequired()
                 .hasArgs()
                 .create(Feature.CMD_ARG_OUTPUT_TABLE));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_DATABASE)
+                .withDescription("hive database to output to")
+                .isRequired()
+                .hasArgs()
+                .create(Feature.CMD_ARG_OUTPUT_DATABASE));
         CommandLineParser parser = new GnuParser();
 
         try {
@@ -178,7 +183,10 @@ public class SSTableExport extends Configured implements Tool {
 
         HCatOutputFormat.setOutput(
                 job,
-                OutputJobInfo.create("default", cl.getOptionValue(Feature.CMD_ARG_OUTPUT_TABLE), null));
+                OutputJobInfo.create(
+                        cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DATABASE),
+                        cl.getOptionValue(Feature.CMD_ARG_OUTPUT_TABLE),
+                        null));
         HCatOutputFormat.setSchema(job, HCatOutputFormat.getTableSchema(job.getConfiguration()));
 
         TextInputFormat.setInputPaths(job, paths.toArray(new Path[paths.size()]));
@@ -193,6 +201,7 @@ public class SSTableExport extends Configured implements Tool {
     public static final class Feature {
         public static final String CMD_ARG_INPUT_DIR = "inputDir";
         public static final String CMD_ARG_INPUT_FILE = "input";
+        public static final String CMD_ARG_OUTPUT_DATABASE = "outputDatabase";
         public static final String CMD_ARG_OUTPUT_TABLE = "outputTable";
     }
 }
