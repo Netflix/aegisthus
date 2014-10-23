@@ -3,6 +3,7 @@ ext.githubProjectName = rootProject.name // Change if github project name is not
 
 project.ext {
     buildWithNebulaPlugin = project.hasProperty('buildWithNebulaPlugin')
+    buildWithLZ4Support = project.hasProperty('buildWithLZ4Support')
     hadoopVersion = project.hasProperty('hadoopVersion') ? hadoopVersion : '2.4.1'
 }
 
@@ -102,6 +103,9 @@ project(':aegisthus-hadoop') {
         includeInJar 'com.netflix.rxjava:rxjava-core:0.19.6'
         includeInJar 'org.apache.cassandra:cassandra-all:2.0.10'
         includeInJar 'org.apache.thrift:libthrift:0.9.1'
+        if (rootProject.buildWithLZ4Support) {
+            includeInJar 'net.jpountz.lz4:lz4:1.2.0'
+        }
 
         includeHadoopLibs(project)
 
