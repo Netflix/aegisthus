@@ -247,6 +247,12 @@ public class Aegisthus extends Configured implements Tool {
          */
         public static final String CONF_LEGACY_COLUMN_NAME_FORMATTING = "aegisthus.legacy_column_name_formatting";
         /**
+         * If set this is set the JSONOutputFormat will not output the columns if their total size is over this value.
+         * For legacy reasons this is based on the size of the columns on disk in SSTable format not the string size of
+         * the columns.
+         */
+        public static final String CONF_MAXCOLSIZE = "aegisthus.maxcolsize";
+        /**
          * Should aegisthus try to skip rows with errors.  Defaults to false.  (untested)
          */
         public static final String CONF_SKIP_ROWS_WITH_ERRORS = "aegisthus.skip_rows_with_errors";

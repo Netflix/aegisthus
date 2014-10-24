@@ -33,6 +33,8 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.NumberFormat;
+import java.util.Collections;
+import java.util.List;
 
 public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritable, RowWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(JsonOutputFormat.class);
@@ -65,11 +67,13 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
     }
 
     @Override
-    public RecordWriter<BytesWritable, RowWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
+    public RecordWriter<BytesWritable, RowWritable> getRecordWriter(final TaskAttemptContext context)
+            throws IOException {
         // No extension on the aeg json format files for historical reasons
         Path workFile = getDefaultWorkFile(context, "");
         Configuration conf = context.getConfiguration();
         FileSystem fs = workFile.getFileSystem(conf);
+        final long maxColSize = conf.getLong(Aegisthus.Feature.CONF_MAXCOLSIZE, -1);
         final FSDataOutputStream outputStream = fs.create(workFile, false);
         final JsonFactory jsonFactory = new JsonFactory();
         final AbstractType<ByteBuffer> keyNameConverter = getConverter(conf, Aegisthus.Feature.CONF_KEYTYPE);
@@ -113,7 +117,30 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
                 jsonGenerator.writeObjectFieldStart(keyName);
                 jsonGenerator.writeNumberField("deletedAt", rowWritable.getDeletedAt());
                 jsonGenerator.writeArrayFieldStart("columns");
-                for (OnDiskAtom atom : rowWritable.getColumns()) {
+
+                List<OnDiskAtom> columns = rowWritable.getColumns();
+                if (maxColSize != -1) {
+                    long columnSize = 0;
+                    for (OnDiskAtom atom : columns) {
+                        columnSize += atom.serializedSizeForSSTable();
+                    }
+
+                    // If the column size exceeds the maximum, write out the error message and replace columns with an
+                    // empty list so they will not be output
+                    if (columnSize > maxColSize) {
+                        jsonGenerator.writeString("error");
+                        jsonGenerator.writeString(
+                                String.format("row too large: %,d bytes - limit %,d bytes", columnSize, maxColSize)
+                        );
+                        jsonGenerator.writeNumber(0);
+
+                        columns = Collections.emptyList();
+
+                        context.getCounter("aegisthus", "rowsTooBig").increment(1L);
+                    }
+                }
+
+                for (OnDiskAtom atom : columns) {
                     if (atom instanceof Column) {
                         jsonGenerator.writeStartArray();
                         String columnName = getString(columnNameConverter, atom.name());
