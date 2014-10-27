@@ -16,13 +16,18 @@
 package com.netflix.aegisthus.mapreduce;
 
 import com.google.common.collect.Lists;
+import com.netflix.Aegisthus;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AtomWritable;
 import com.netflix.aegisthus.io.writable.RowWritable;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
+import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.BytesType;
+import org.apache.cassandra.db.marshal.TypeParser;
+import org.apache.cassandra.exceptions.ConfigurationException;
+import org.apache.cassandra.exceptions.SyntaxException;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.slf4j.Logger;
@@ -36,6 +41,21 @@ import java.util.List;
 public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, BytesWritable, RowWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(CassSSTableReducer.class);
     private long rowsToAddToCounter = 0;
+    private AbstractType<?> columnComparator;
+
+    @Override protected void setup(
+            Context context)
+            throws IOException, InterruptedException {
+        super.setup(context);
+
+        String columnType = context.getConfiguration().get(Aegisthus.Feature.CONF_COLUMNTYPE, "BytesType");
+
+        try {
+            columnComparator = TypeParser.parse(columnType);
+        } catch (SyntaxException | ConfigurationException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
     @Override
     protected void cleanup(Context context) throws IOException, InterruptedException {
@@ -46,15 +66,15 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
     @Override
     public void reduce(AegisthusKey key, Iterable<AtomWritable> values, Context ctx)
             throws IOException, InterruptedException {
-        RowReducer rowReducer = new RowReducer();
+        RowReducer rowReducer = new RowReducer(columnComparator);
 
         for (AtomWritable value : values) {
             if (rowReducer.key == null) {
                 rowReducer.key = value.getKey();
 
                 if (LOG.isDebugEnabled()) {
-                    String hexKey = BytesType.instance.getString(ByteBuffer.wrap(rowReducer.key));
-                    LOG.debug("Doing reduce for key '{}'", hexKey);
+                    String formattedKey = columnComparator.getString(ByteBuffer.wrap(rowReducer.key));
+                    LOG.debug("Doing reduce for key '{}'", formattedKey);
                 }
             }
 
@@ -88,10 +108,14 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
     static class RowReducer {
         private final List<OnDiskAtom> columns = Lists.newArrayList();
         // TODO: need to get comparator
-        private final RangeTombstone.Tracker tombstoneTracker = new RangeTombstone.Tracker(BytesType.instance);
+        private final RangeTombstone.Tracker tombstoneTracker;
         private OnDiskAtom currentColumn = null;
         private long deletedAt = Long.MIN_VALUE;
         private byte[] key;
+
+        RowReducer(AbstractType<?> columnComparator) {
+            tombstoneTracker = new RangeTombstone.Tracker(columnComparator);
+        }
 
         @SuppressWarnings("StatementWithEmptyBody")
         public void addAtom(AtomWritable writable) {
