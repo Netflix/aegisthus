@@ -43,11 +43,14 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
     private long rowsToAddToCounter = 0;
     private AbstractType<?> columnComparator;
     private AbstractType<?> rowKeyComparator;
+    private long maxRowSize = Long.MAX_VALUE;
 
     @Override protected void setup(
             Context context)
             throws IOException, InterruptedException {
         super.setup(context);
+
+        maxRowSize = context.getConfiguration().getLong(Aegisthus.Feature.CONF_MAXCOLSIZE, Long.MAX_VALUE);
 
         String columnType = context.getConfiguration().get(Aegisthus.Feature.CONF_COLUMNTYPE, "BytesType");
         String rowKeyType = context.getConfiguration().get(Aegisthus.Feature.CONF_KEYTYPE, "BytesType");
@@ -86,6 +89,13 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
             }
 
             rowReducer.addAtom(value);
+
+            if (rowReducer.getAtomTotalSize() > maxRowSize) {
+                String formattedKey = rowKeyComparator.getString(ByteBuffer.wrap(rowReducer.key));
+                LOG.warn("Skipping row {} that is too big, current size is already {}.",
+                        formattedKey, rowReducer.getAtomTotalSize());
+                ctx.getCounter("aegisthus", "reducerRowsTooBig").increment(1L);
+            }
         }
 
         rowReducer.finalizeReduce();
@@ -115,6 +125,7 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
         private OnDiskAtom currentColumn = null;
         private long deletedAt = Long.MIN_VALUE;
         private byte[] key;
+        private long atomTotalSize = 0L;
 
         RowReducer(AbstractType<?> columnComparator) {
             tombstoneTracker = new RangeTombstone.Tracker(columnComparator);
@@ -126,6 +137,8 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
             if (atom == null) {
                 return;
             }
+
+            atomTotalSize += atom.serializedSizeForSSTable();
 
             this.tombstoneTracker.update(atom);
             // Right now, we will only keep columns. This works because we will
@@ -177,6 +190,10 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
                     columnIterator.remove();
                 }
             }
+        }
+
+        public long getAtomTotalSize() {
+            return atomTotalSize;
         }
     }
 }
