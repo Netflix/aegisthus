@@ -108,10 +108,7 @@ public class AtomWritable implements Writable, Configurable {
         boolean hasAtom = dis.readBoolean();
         if (hasAtom) {
             this.atom = serializer.deserializeFromSSTable(
-                    dis,
-                    ColumnSerializer.Flag.PRESERVE_SIZE,
-                    Integer.MIN_VALUE,
-                    version
+                    dis, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version
             );
         }
     }

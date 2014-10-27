@@ -50,13 +50,40 @@ import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.net.URL;
 import java.util.List;
 import java.util.Set;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 
 public class Aegisthus extends Configured implements Tool {
     private Descriptor.Version version;
 
+    private static void logAegisthusVersion() {
+        String classPath = Aegisthus.class.getResource("Aegisthus.class").toString();
+        String manifestPath = classPath.replace("com/netflix/Aegisthus.class", "META-INF/MANIFEST.MF");
+        try (InputStream inputStream = new URL(manifestPath).openStream()) {
+            Manifest manifest = new Manifest(inputStream);
+            Attributes attr = manifest.getMainAttributes();
+            System.out.println("Running Aegisthus version " +
+                            attr.getValue("Implementation-Version") +
+                            " built from change " +
+                            attr.getValue("Change") +
+                            " on host " +
+                            attr.getValue("Build-Host") +
+                            " on " +
+                            attr.getValue("Build-Date") +
+                            " with Java " +
+                            attr.getValue("Build-Java-Version")
+            );
+        } catch (IOException ignored) {
+            System.out.println("Unable to locate Aegisthus manifest file");
+        }
+    }
+
     public static void main(String[] args) throws Exception {
+        logAegisthusVersion();
         int res = ToolRunner.run(new Configuration(), new Aegisthus(), args);
 
         boolean exit = Boolean.valueOf(System.getProperty(Feature.CONF_SYSTEM_EXIT, "true"));
@@ -194,6 +221,11 @@ public class Aegisthus extends Configured implements Tool {
         public static final String CMD_ARG_PRODUCE_SSTABLE = "produceSSTable";
 
         /**
+         * If set this is the blocksize aegisthus will use when splitting input files otherwise the hadoop vaule will
+         * be used.
+         */
+        public static final String CONF_BLOCKSIZE = "aegisthus.blocksize";
+        /**
          * The column type, used for sorting columns in all output formats and also in the JSON output format. The
          * default is BytesType.
          */
@@ -211,9 +243,23 @@ public class Aegisthus extends Configured implements Tool {
          */
         public static final String CONF_KEYTYPE = "aegisthus.keytype";
         /**
+         * Earlier versions of Aegisthus did extra formatting on just the column name.  This defaults to false.
+         */
+        public static final String CONF_LEGACY_COLUMN_NAME_FORMATTING = "aegisthus.legacy_column_name_formatting";
+        /**
+         * If set this is set the JSONOutputFormat will not output the columns if their total size is over this value.
+         * For legacy reasons this is based on the size of the columns on disk in SSTable format not the string size of
+         * the columns.
+         */
+        public static final String CONF_MAXCOLSIZE = "aegisthus.maxcolsize";
+        /**
          * Should aegisthus try to skip rows with errors.  Defaults to false.  (untested)
          */
         public static final String CONF_SKIP_ROWS_WITH_ERRORS = "aegisthus.skip_rows_with_errors";
+        /**
+         * Sort the columns by name rather than by the order in Cassandra.  This defaults to false.
+         */
+        public static final String CONF_SORT_COLUMNS_BY_NAME = "aegisthus.sort_columns_by_name";
         /**
          * The version of SSTable to input and output.
          */

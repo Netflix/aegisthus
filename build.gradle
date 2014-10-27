@@ -9,6 +9,10 @@ project.ext {
 buildscript {
     repositories {
         mavenCentral()
+        jcenter()
+    }
+    dependencies {
+        classpath 'com.netflix.nebula:gradle-info-plugin:1.9.+'
     }
     apply from: file('gradle/buildscript.gradle'), to: buildscript
 }
@@ -18,6 +22,7 @@ allprojects {
         apply plugin: 'nebula'
         apply plugin: 'java'
     }
+    apply plugin: 'info'
 
     configurations {
         includeInJar
