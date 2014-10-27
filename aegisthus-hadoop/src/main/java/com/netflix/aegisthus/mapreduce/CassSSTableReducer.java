@@ -42,6 +42,7 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
     private static final Logger LOG = LoggerFactory.getLogger(CassSSTableReducer.class);
     private long rowsToAddToCounter = 0;
     private AbstractType<?> columnComparator;
+    private AbstractType<?> rowKeyComparator;
 
     @Override protected void setup(
             Context context)
@@ -49,9 +50,11 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
         super.setup(context);
 
         String columnType = context.getConfiguration().get(Aegisthus.Feature.CONF_COLUMNTYPE, "BytesType");
+        String rowKeyType = context.getConfiguration().get(Aegisthus.Feature.CONF_KEYTYPE, "BytesType");
 
         try {
             columnComparator = TypeParser.parse(columnType);
+            rowKeyComparator = TypeParser.parse(rowKeyType);
         } catch (SyntaxException | ConfigurationException e) {
             throw new RuntimeException(e);
         }
@@ -73,7 +76,7 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
                 rowReducer.key = value.getKey();
 
                 if (LOG.isDebugEnabled()) {
-                    String formattedKey = columnComparator.getString(ByteBuffer.wrap(rowReducer.key));
+                    String formattedKey = rowKeyComparator.getString(ByteBuffer.wrap(rowReducer.key));
                     LOG.debug("Doing reduce for key '{}'", formattedKey);
                 }
             }
