@@ -16,6 +16,7 @@
 package com.netflix.aegisthus.io.sstable;
 
 import com.netflix.aegisthus.io.writable.AtomWritable;
+import org.apache.cassandra.db.ColumnSerializer;
 import org.apache.cassandra.db.ColumnSerializer.CorruptColumnException;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.BytesType;
@@ -28,7 +29,6 @@ import rx.Subscriber;
 
 import java.io.DataInput;
 import java.io.DataInputStream;
-import java.io.IOError;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
@@ -37,16 +37,23 @@ import java.util.concurrent.Executors;
 
 public class SSTableColumnScanner {
     private static final Logger LOG = LoggerFactory.getLogger(SSTableColumnScanner.class);
+    private final long end;
     private final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
-    private long end = -1;
+    private final long start;
     private DataInputStream input;
-    private long pos = 0;
+    private long pos;
     private Descriptor.Version version = null;
 
-    public SSTableColumnScanner(InputStream is, long end, Descriptor.Version version) {
+    public SSTableColumnScanner(InputStream is, long start, long end, Descriptor.Version version) throws IOException {
         this.version = version;
+        this.start = start;
         this.end = end;
         this.input = new DataInputStream(is);
+        if (this.start > 0) {
+            LOG.info("skipping to start: {}", start);
+            skipUnsafe(start);
+        }
+        this.pos = start;
     }
 
     public void close() {
@@ -117,7 +124,9 @@ public class SSTableColumnScanner {
         int actualColumnCount = 0;
         for (int i = 0; i < count; i++, actualColumnCount++) {
             // serialize columns
-            OnDiskAtom atom = serializer.deserializeFromSSTable(columns, version);
+            OnDiskAtom atom = serializer.deserializeFromSSTable(
+                    columns, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version
+            );
             if (atom == null) {
                 // If atom was null that means this was a version that does not have version.hasRowSizeAndColumnCount
                 // So we have to add the size for the end of row marker also
@@ -142,16 +151,20 @@ public class SSTableColumnScanner {
         super.finalize();
     }
 
+    public long getEnd() {
+        return end;
+    }
+
+    public long getPos() {
+        return pos;
+    }
+
+    public long getStart() {
+        return start;
+    }
+
     boolean hasMore() {
-        try {
-            if (end == -1) {
-                return input.available() != 0;
-            } else {
-                return pos < end;
-            }
-        } catch (IOException e) {
-            throw new IOError(e);
-        }
+        return pos < end;
     }
 
     public rx.Observable<AtomWritable> observable() {
@@ -172,7 +185,7 @@ public class SSTableColumnScanner {
         return ret;
     }
 
-    public void skipUnsafe(long bytes) throws IOException {
+    void skipUnsafe(long bytes) throws IOException {
         if (bytes <= 0) {
             return;
         }

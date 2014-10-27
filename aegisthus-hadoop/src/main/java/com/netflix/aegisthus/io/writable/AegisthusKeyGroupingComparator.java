@@ -13,6 +13,6 @@ public class AegisthusKeyGroupingComparator extends WritableComparator {
     public int compare(WritableComparable wc1, WritableComparable wc2) {
         AegisthusKey ck1 = (AegisthusKey) wc1;
         AegisthusKey ck2 = (AegisthusKey) wc2;
-        return ck1.getKey().compareTo(ck2.getKey());
+        return ck1.compareTo(ck2);
     }
 }

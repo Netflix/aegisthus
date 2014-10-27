@@ -33,7 +33,6 @@ import java.util.Objects;
  * deleting these.
  */
 public class AegisthusKey implements WritableComparable<AegisthusKey> {
-    private Comparator<ByteBuffer> comparator;
     private ByteBuffer key;
     private ByteBuffer name;
     private Long timestamp;
@@ -68,9 +67,13 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
 
     @Override
     public int compareTo(@Nonnull AegisthusKey other) {
+        return this.key.compareTo(other.key);
+    }
+
+    public int compareTo(@Nonnull AegisthusKey other, Comparator<ByteBuffer> nameComparator) {
         return ComparisonChain.start()
                 .compare(this.key, other.key)
-                .compare(this.name, other.name)
+                .compare(this.name, other.name, nameComparator)
                 .compare(this.timestamp, other.timestamp)
                 .result();
     }
@@ -80,8 +83,7 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         if (this == obj) {return true;}
         if (obj == null || getClass() != obj.getClass()) {return false;}
         final AegisthusKey other = (AegisthusKey) obj;
-        return Objects.equals(this.comparator, other.comparator)
-                && Objects.equals(this.key, other.key)
+        return Objects.equals(this.key, other.key)
                 && Objects.equals(this.name, other.name)
                 && Objects.equals(this.timestamp, other.timestamp);
     }
@@ -92,7 +94,7 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
 
     @Override
     public int hashCode() {
-        return Objects.hash(comparator, key, name, timestamp);
+        return Objects.hash(key, name, timestamp);
     }
 
     @Override
@@ -116,14 +118,9 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         }
     }
 
-    public void setComparator(Comparator<ByteBuffer> comparator) {
-        this.comparator = comparator;
-    }
-
     @Override
     public String toString() {
         return com.google.common.base.Objects.toStringHelper(this)
-                .add("comparator", comparator)
                 .add("key", key)
                 .add("name", name)
                 .add("timestamp", timestamp)

@@ -15,8 +15,10 @@
  */
 package com.netflix.aegisthus.input;
 
+import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.readers.SSTableRecordReader;
 import com.netflix.aegisthus.input.splits.AegCompressedSplit;
 import com.netflix.aegisthus.input.splits.AegSplit;
@@ -76,6 +78,10 @@ public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWrit
         }
 
         long blockSize = file.getBlockSize();
+        String aegisthusBlockSize = job.getConfiguration().get(Aegisthus.Feature.CONF_BLOCKSIZE);
+        if (!Strings.isNullOrEmpty(aegisthusBlockSize)) {
+            blockSize = Long.valueOf(aegisthusBlockSize);
+        }
         long maxSplitSize = (long) (blockSize * .99);
         long fuzzySplit = (long) (blockSize * 1.2);
 

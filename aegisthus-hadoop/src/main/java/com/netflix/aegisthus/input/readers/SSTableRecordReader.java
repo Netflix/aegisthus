@@ -40,12 +40,9 @@ import java.util.Iterator;
 
 public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(SSTableRecordReader.class);
-    private long end;
     private Iterator<AtomWritable> iterator;
     private AegisthusKey key;
-    private long pos;
     private SSTableColumnScanner scanner;
-    private long start;
     private AtomWritable value;
 
     @Override
@@ -67,10 +64,12 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
 
     @Override
     public float getProgress() throws IOException, InterruptedException {
-        if (start == end) {
+        if (scanner.getStart() == scanner.getEnd()) {
             return 0.0f;
         } else {
-            return Math.min(1.0f, (pos - start) / (float) (end - start));
+            long completed = scanner.getPos() - scanner.getStart();
+            float total = scanner.getEnd() - scanner.getStart();
+            return Math.min(1.0f, completed / total);
         }
     }
 
@@ -79,9 +78,9 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
             throws IOException, InterruptedException {
         AegSplit split = (AegSplit) inputSplit;
 
-        start = split.getStart();
+        long start = split.getStart();
         InputStream is = split.getInput(ctx.getConfiguration());
-        end = split.getDataEnd();
+        long end = split.getDataEnd();
         String filename = split.getPath().toUri().toString();
 
         LOG.info("File: {}", split.getPath().toUri().getPath());
@@ -89,10 +88,7 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
         LOG.info("End: {}", end);
 
         try {
-            scanner = new SSTableColumnScanner(is, end, Descriptor.fromFilename(filename).version);
-            LOG.info("skipping to start: {}", start);
-            scanner.skipUnsafe(start);
-            this.pos = start;
+            scanner = new SSTableColumnScanner(is, start, end, Descriptor.fromFilename(filename).version);
             LOG.info("Creating observable");
             rx.Observable<AtomWritable> observable = scanner.observable();
 
