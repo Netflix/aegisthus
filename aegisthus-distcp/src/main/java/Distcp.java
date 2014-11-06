@@ -2,6 +2,7 @@ import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -228,9 +229,14 @@ public class Distcp extends Configured implements Tool {
 		if (manifestPath == null) {
 			FileSystem fs = inputPath.getFileSystem(job.getConfiguration());
 			DataOutputStream dos = fs.create(inputPath);
-			List<String> inputs = Lists.newArrayList(inputFiles);
-			for (int i = 0; i < inputs.size(); i++) {
-				inputs.set(i, cleanS3(inputs.get(i)));
+
+			List<String> inputs = new ArrayList<>();
+			for (int i = 0; i < inputFiles.length; i++) {
+				Path path = new Path(cleanS3(inputFiles[i]));
+				FileStatus[] files = path.getFileSystem(job.getConfiguration()).globStatus(path);
+				for (int j = 0; j < files.length; j++) {
+					inputs.add(files[j].getPath().toString());
+				}
 			}
 			List<FileStatus> files = Lists.newArrayList(DirectoryWalker
 					.with(job.getConfiguration())
