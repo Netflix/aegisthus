@@ -3,6 +3,11 @@ package org.coursera.mapreducer;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AtomWritable;
 import com.netflix.aegisthus.util.CFMetadataUtility;
+import org.apache.avro.Schema;
+import org.apache.avro.generic.GenericData;
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.mapred.AvroKey;
+import org.apache.avro.mapreduce.AvroJob;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.cql3.CFDefinition;
 import org.apache.cassandra.cql3.statements.ColumnGroupMap;
@@ -11,20 +16,18 @@ import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.*;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.hadoop.io.IntWritable;
+import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapreduce.Mapper;
-import org.apache.hive.hcatalog.common.HCatException;
-import org.apache.hive.hcatalog.data.DefaultHCatRecord;
-import org.apache.hive.hcatalog.data.HCatRecord;
-import org.apache.hive.hcatalog.data.schema.HCatSchema;
-import org.apache.hive.hcatalog.mapreduce.HCatOutputFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.sql.Timestamp;
+import java.util.Date;
 import java.util.UUID;
 
-public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, DefaultHCatRecord> {
+public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, AvroKey<GenericRecord>, NullWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(CQLMapper.class);
 
     ColumnGroupMap.Builder cgmBuilder;
@@ -32,14 +35,12 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
     CFDefinition cfDef;
     ByteBuffer currentKey;
 
-    HCatSchema hSchema;
-    int numberOfColumns;
+    Schema avroSchema;
 
     @Override protected void setup(
             Context context)
             throws IOException, InterruptedException {
-        hSchema = HCatOutputFormat.getTableSchema(context.getConfiguration());
-        numberOfColumns = hSchema.getFieldNames().size();
+        avroSchema = AvroJob.getOutputKeySchema(context.getConfiguration());
 
         cfMetaData = CFMetadataUtility.initializeCfMetaData(context.getConfiguration());
         cfDef = cfMetaData.getCfDef();
@@ -119,7 +120,7 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
 
     private void handleGroup(Context context, ColumnGroupMap group, ByteBuffer[] keyComponents, ColumnGroupMap staticGroup)
             throws IOException, InterruptedException {
-        DefaultHCatRecord record = new DefaultHCatRecord(numberOfColumns);
+        GenericRecord record = new GenericData.Record(avroSchema);
 
         // write out partition keys
         for (CFDefinition.Name name : cfDef.partitionKeys()) {
@@ -141,11 +142,11 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
             addValue(record, name, staticGroup);
         }
 
-        context.write(new IntWritable(currentKey.hashCode()), record);
+        context.write(new AvroKey(record), NullWritable.get());
     }
 
     /* adapted from org.apache.cassandra.cql3.statements.SelectStatement.addValue */
-    private void addValue(HCatRecord record, CFDefinition.Name name, ColumnGroupMap group) throws HCatException {
+    private void addValue(GenericRecord record, CFDefinition.Name name, ColumnGroupMap group) {
         if (name.type.isCollection()) {
             // TODO(danchia): support collections
             throw new RuntimeException("Collections not supported yet.");
@@ -155,9 +156,9 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
         }
     }
 
-    private void addCqlValueToRecord(HCatRecord record, CFDefinition.Name name, ByteBuffer value) throws HCatException {
+    private void addCqlValueToRecord(GenericRecord record, CFDefinition.Name name, ByteBuffer value) {
         if (value == null) {
-            record.set(name.name.toString(), hSchema, null);
+            record.put(name.name.toString(), null);
             return;
         }
 
@@ -177,10 +178,13 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, IntWritable, D
             buffer.get(data);
 
             valueDeserialized = data;
+        } else if (baseType instanceof TimestampType) {
+            Date date = (Date) valueDeserialized;
+            valueDeserialized = new Timestamp(date.getTime());
         }
 
         //LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
 
-        record.set(name.name.toString(), hSchema, valueDeserialized);
+        record.put(name.name.toString(), valueDeserialized);
     }
 }
