@@ -6,6 +6,9 @@ import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.AegisthusInputFormat;
 import com.netflix.aegisthus.tools.DirectoryWalker;
 import com.netflix.aegisthus.util.CFMetadataUtility;
+import org.apache.avro.Schema;
+import org.apache.avro.mapreduce.AvroJob;
+import org.apache.avro.mapreduce.AvroKeyOutputFormat;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
@@ -15,21 +18,17 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.OptionBuilder;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.apache.commons.io.IOUtils;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.IntWritable;
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
-import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
+import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-import org.apache.hive.hcatalog.data.DefaultHCatRecord;
-import org.apache.hive.hcatalog.mapreduce.HCatOutputFormat;
-import org.apache.hive.hcatalog.mapreduce.OutputJobInfo;
 import org.coursera.mapreducer.CQLMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -42,16 +41,6 @@ public class SSTableExport extends Configured implements Tool {
     private static final Logger LOG = LoggerFactory.getLogger(SSTableExport.class);
 
     private Descriptor.Version version;
-
-    public static class Reducer extends org.apache.hadoop.mapreduce.Reducer<IntWritable, DefaultHCatRecord, Text, DefaultHCatRecord> {
-        @Override protected void reduce(IntWritable key, Iterable<DefaultHCatRecord> values,
-                Context context)
-                throws IOException, InterruptedException {
-            for (DefaultHCatRecord v : values) {
-                context.write(null, v);
-            }
-        }
-    }
 
     public static void main(String[] args) throws Exception {
         int res = ToolRunner.run(new Configuration(), new SSTableExport(), args);
@@ -116,16 +105,16 @@ public class SSTableExport extends Configured implements Tool {
                 .withDescription("a directory from which we will recursively pull sstables")
                 .hasArgs()
                 .create(Feature.CMD_ARG_INPUT_DIR));
-        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_TABLE)
-                .withDescription("hive table to output to")
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_AVRO_SCHEMA_FILE)
+                .withDescription("location of avro schema")
                 .isRequired()
                 .hasArgs()
-                .create(Feature.CMD_ARG_OUTPUT_TABLE));
-        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_DATABASE)
-                .withDescription("hive database to output to")
+                .create(Feature.CMD_ARG_AVRO_SCHEMA_FILE));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_OUTPUT_DIR)
                 .isRequired()
-                .hasArgs()
-                .create(Feature.CMD_ARG_OUTPUT_DATABASE));
+                .withDescription("output location")
+                .hasArg()
+                .create(Feature.CMD_ARG_OUTPUT_DIR));
         CommandLineParser parser = new GnuParser();
 
         try {
@@ -143,6 +132,11 @@ public class SSTableExport extends Configured implements Tool {
             formatter.printHelp(String.format("hadoop jar aegisthus.jar %s", SSTableExport.class.getName()), opts);
             return null;
         }
+    }
+
+    private String getAvroSchema(String schemaLocation, Configuration conf) throws IOException {
+        Path schemaPath = new Path(schemaLocation);
+        return IOUtils.toString(schemaPath.getFileSystem(conf).open(schemaPath));
     }
 
     @Override
@@ -167,6 +161,9 @@ public class SSTableExport extends Configured implements Tool {
             paths.addAll(getDataFiles(job.getConfiguration(), cl.getOptionValue(Feature.CMD_ARG_INPUT_DIR)));
         }
 
+        String avroSchemaString = getAvroSchema(cl.getOptionValue(Feature.CMD_ARG_AVRO_SCHEMA_FILE), job.getConfiguration());
+        Schema avroSchema = new Schema.Parser().parse(avroSchemaString);
+
         // At this point we have the version of sstable that we can use for this run
         job.getConfiguration().set(Aegisthus.Feature.CONF_SSTABLE_VERSION, version.toString());
 
@@ -175,21 +172,15 @@ public class SSTableExport extends Configured implements Tool {
         }
 
         job.setInputFormatClass(AegisthusInputFormat.class);
-        job.setOutputFormatClass(HCatOutputFormat.class);
         job.setMapperClass(CQLMapper.class);
-        job.setMapOutputKeyClass(IntWritable.class);
-        job.setMapOutputValueClass(DefaultHCatRecord.class);
-        job.setReducerClass(Reducer.class);
+        job.setOutputFormatClass(AvroKeyOutputFormat.class);
+        AvroJob.setOutputKeySchema(job, avroSchema);
 
-        HCatOutputFormat.setOutput(
-                job,
-                OutputJobInfo.create(
-                        cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DATABASE),
-                        cl.getOptionValue(Feature.CMD_ARG_OUTPUT_TABLE),
-                        null));
-        HCatOutputFormat.setSchema(job, HCatOutputFormat.getTableSchema(job.getConfiguration()));
+        // Map-only job
+        job.setNumReduceTasks(0);
 
         TextInputFormat.setInputPaths(job, paths.toArray(new Path[paths.size()]));
+        FileOutputFormat.setOutputPath(job, new Path(cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DIR)));
 
         job.submit();
         System.out.println(job.getJobID());
@@ -201,7 +192,7 @@ public class SSTableExport extends Configured implements Tool {
     public static final class Feature {
         public static final String CMD_ARG_INPUT_DIR = "inputDir";
         public static final String CMD_ARG_INPUT_FILE = "input";
-        public static final String CMD_ARG_OUTPUT_DATABASE = "outputDatabase";
-        public static final String CMD_ARG_OUTPUT_TABLE = "outputTable";
+        public static final String CMD_ARG_OUTPUT_DIR = "output";
+        public static final String CMD_ARG_AVRO_SCHEMA_FILE = "avroSchemaFile";
     }
 }
