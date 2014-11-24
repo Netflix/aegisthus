@@ -95,6 +95,7 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
                 LOG.warn("Skipping row {} that is too big, current size is already {}.",
                         formattedKey, rowReducer.getAtomTotalSize());
                 ctx.getCounter("aegisthus", "reducerRowsTooBig").increment(1L);
+                continue;
             }
         }
 
