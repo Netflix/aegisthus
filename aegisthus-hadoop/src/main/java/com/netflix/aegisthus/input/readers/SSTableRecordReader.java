@@ -20,6 +20,7 @@ import com.netflix.aegisthus.input.splits.AegSplit;
 import com.netflix.aegisthus.io.sstable.SSTableColumnScanner;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AtomWritable;
+import com.netflix.aegisthus.util.ObservableToIterator;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
@@ -109,10 +110,7 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
                         });
             }
 
-            iterator = observable
-                    .toBlocking()
-                    .toIterable()
-                    .iterator();
+            iterator = ObservableToIterator.toIterator(observable);
             LOG.info("done initializing");
         } catch (IOException e) {
             throw new IOError(e);
