@@ -9,6 +9,11 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
+/**
+ * Most of this code is borrowed from rx.internal.operators.BlockingOperatorToIterator, which sadly does not offer a way
+ * to apply backpressure.
+ */
+
 public class ObservableToIterator {
     public static <T> Iterator<T> toIterator(Observable<? extends T> source) {
         return toIterator(source, 25);
