@@ -180,7 +180,7 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, AvroKey<Generi
             valueDeserialized = data;
         } else if (baseType instanceof TimestampType) {
             Date date = (Date) valueDeserialized;
-            valueDeserialized = new Timestamp(date.getTime());
+            valueDeserialized = date.getTime();
         }
 
         //LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
