@@ -64,8 +64,6 @@ import java.util.jar.Manifest;
 public class Aegisthus extends Configured implements Tool {
     private static final Logger LOG = LoggerFactory.getLogger(Aegisthus.class);
 
-    private Descriptor.Version version;
-
     private static void logAegisthusVersion() {
         String classPath = Aegisthus.class.getResource("Aegisthus.class").toString();
         String manifestPath = classPath.replace("com/netflix/Aegisthus.class", "META-INF/MANIFEST.MF");
@@ -100,18 +98,6 @@ public class Aegisthus extends Configured implements Tool {
         }
     }
 
-    private void checkVersionFromFilename(String filename) {
-        Descriptor descriptor = Descriptor.fromFilename(filename);
-
-        if (this.version == null) {
-            this.version = descriptor.version;
-        } else if (!this.version.equals(descriptor.version)) {
-            throw new IllegalStateException("All files must have the same sstable version.  File '" + filename
-                    + "' has version '" + descriptor.version + "' and we have already seen a file with version '"
-                    + version + "'");
-        }
-    }
-
     private void setConfigurationFromCql(Configuration conf) {
         CFMetaData cfMetaData = CFMetadataUtility.initializeCfMetaData(conf);
         String keyType = cfMetaData.getKeyValidator().toString();
@@ -131,7 +117,6 @@ public class Aegisthus extends Configured implements Tool {
         List<FileStatus> input = Lists.newArrayList(fs.listStatus(dirPath));
         for (String path : DirectoryWalker.with(conf).threaded().addAllStatuses(input).pathsString()) {
             if (path.endsWith("-Data.db")) {
-                checkVersionFromFilename(path);
                 globs.add(path.replaceAll("[^/]+-Data.db", "*-Data.db"));
             }
         }
@@ -160,6 +145,12 @@ public class Aegisthus extends Configured implements Tool {
         opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_PRODUCE_SSTABLE)
                 .withDescription("produces sstable output (default is to produce json)")
                 .create(Feature.CMD_ARG_PRODUCE_SSTABLE));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION)
+                .withDescription("version of sstable to produce (default is to produce " +
+                        Descriptor.Version.current_version
+                        + ")")
+                .hasArg()
+                .create(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION));
         CommandLineParser parser = new GnuParser();
 
         try {
@@ -193,7 +184,6 @@ public class Aegisthus extends Configured implements Tool {
         List<Path> paths = Lists.newArrayList();
         if (cl.hasOption(Feature.CMD_ARG_INPUT_FILE)) {
             for (String input : cl.getOptionValues(Feature.CMD_ARG_INPUT_FILE)) {
-                checkVersionFromFilename(input);
                 paths.add(new Path(input));
             }
         }
@@ -202,6 +192,10 @@ public class Aegisthus extends Configured implements Tool {
         }
 
         // At this point we have the version of sstable that we can use for this run
+        Descriptor.Version version = Descriptor.Version.CURRENT;
+        if (cl.hasOption(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION)) {
+            version = new Descriptor.Version(cl.getOptionValue(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION));
+        }
         job.getConfiguration().set(Feature.CONF_SSTABLE_VERSION, version.toString());
 
         if (job.getConfiguration().get(Feature.CONF_CQL_SCHEMA) != null) {
@@ -240,6 +234,7 @@ public class Aegisthus extends Configured implements Tool {
         public static final String CMD_ARG_INPUT_FILE = "input";
         public static final String CMD_ARG_OUTPUT_DIR = "output";
         public static final String CMD_ARG_PRODUCE_SSTABLE = "produceSSTable";
+        public static final String CMD_ARG_SSTABLE_OUTPUT_VERSION = "sstable_output_version";
 
         /**
          * If set this is the blocksize aegisthus will use when splitting input files otherwise the hadoop vaule will

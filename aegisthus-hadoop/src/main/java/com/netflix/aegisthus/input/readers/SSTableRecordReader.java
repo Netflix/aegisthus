@@ -77,7 +77,7 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
     @Override
     public void initialize(@Nonnull InputSplit inputSplit, @Nonnull final TaskAttemptContext ctx)
             throws IOException, InterruptedException {
-        AegSplit split = (AegSplit) inputSplit;
+        final AegSplit split = (AegSplit) inputSplit;
 
         long start = split.getStart();
         InputStream is = split.getInput(ctx.getConfiguration());
@@ -100,11 +100,8 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
                         .onErrorFlatMap(new Func1<OnErrorThrowable, Observable<? extends AtomWritable>>() {
                             @Override
                             public Observable<? extends AtomWritable> call(OnErrorThrowable onErrorThrowable) {
-                                LOG.error("failure deserializing", onErrorThrowable);
-                                if (ctx instanceof TaskInputOutputContext) {
-                                    ctx.getCounter("aegisthus", onErrorThrowable.getCause().getClass().getSimpleName())
-                                            .increment(1L);
-                                }
+                                LOG.error("failure deserializing file {}", split.getPath(), onErrorThrowable);
+                                ctx.getCounter("aegisthus", "error_skipped_input").increment(1L);
                                 return Observable.empty();
                             }
                         });
