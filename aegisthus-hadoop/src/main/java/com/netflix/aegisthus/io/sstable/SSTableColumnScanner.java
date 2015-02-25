@@ -22,6 +22,7 @@ import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.cassandra.io.util.FileUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable.OnSubscribe;
@@ -70,10 +71,12 @@ public class SSTableColumnScanner {
     void deserialize(Subscriber<? super AtomWritable> subscriber) {
         LOG.debug("current pos({}) done ({})", pos, hasMore() ? "has more" : "no more");
         while (hasMore()) {
+            int keysize = -1;
+            byte[] rowKey = null;
             try {
-                int keysize = input.readUnsignedShort();
+                keysize = input.readUnsignedShort();
                 long rowSize = 2;
-                byte[] rowKey = new byte[keysize];
+                rowKey = new byte[keysize];
                 input.readFully(rowKey);
                 rowSize += keysize;
 
@@ -101,20 +104,38 @@ public class SSTableColumnScanner {
 
                 try {
                     rowSize += deserializeColumns(subscriber, rowKey, markedForDeleteAt, columnCount, input);
+                } catch (OutOfMemoryError e) {
+                    String message = "Out of memory while reading row for key " + keyToString(rowKey)
+                            + "this may be caused by a corrupt file";
+                    subscriber.onError(new IOException(message, e));
                 } catch (CorruptColumnException e) {
-                    subscriber.onError(new IOException(
-                            "Error in row for key " + BytesType.instance.getString(ByteBuffer.wrap(rowKey)), e));
+                    String message = "Error in row for key " + keyToString(rowKey);
+                    subscriber.onError(new IOException(message, e));
                 }
 
                 // For versions without row size we need to load the columns to figure out the size they occupy
                 if (!version.hasRowSizeAndColumnCount) {
                     this.pos += rowSize;
                 }
+            } catch (OutOfMemoryError e) {
+                String message = "Out of memory while reading row wth size " + keysize
+                        + " for key " + keyToString(rowKey) + "this may be caused by a corrupt file";
+                subscriber.onError(new IOException(message, e));
+                break;
             } catch (IOException e) {
                 subscriber.onError(e);
                 break;
             }
         }
+    }
+
+    private String keyToString(byte[] rowKey) {
+        if (rowKey == null) {
+            return "null";
+        }
+
+        String str = BytesType.instance.getString(ByteBuffer.wrap(rowKey));
+        return StringUtils.left(str, 32);
     }
 
     long deserializeColumns(Subscriber<? super AtomWritable> subscriber, byte[] rowKey, long deletedAt,
