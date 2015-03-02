@@ -2,6 +2,7 @@ import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -226,11 +227,17 @@ public class Distcp extends Configured implements Tool {
 	protected int setupInput(Job job, Path inputPath, String[] inputFiles, String manifestPath) throws IOException {
 		int size = 0;
 		if (manifestPath == null) {
+			LOG.info("Setting up input");
 			FileSystem fs = inputPath.getFileSystem(job.getConfiguration());
 			DataOutputStream dos = fs.create(inputPath);
-			List<String> inputs = Lists.newArrayList(inputFiles);
-			for (int i = 0; i < inputs.size(); i++) {
-				inputs.set(i, cleanS3(inputs.get(i)));
+
+			List<String> inputs = new ArrayList<>();
+			for (int i = 0; i < inputFiles.length; i++) {
+				Path path = new Path(cleanS3(inputFiles[i]));
+				FileStatus[] files = path.getFileSystem(job.getConfiguration()).globStatus(path);
+				for (int j = 0; j < files.length; j++) {
+					inputs.add(files[j].getPath().toString());
+				}
 			}
 			List<FileStatus> files = Lists.newArrayList(DirectoryWalker
 					.with(job.getConfiguration())
@@ -238,11 +245,20 @@ public class Distcp extends Configured implements Tool {
 					.statuses());
 
 			for (FileStatus file : files) {
+				Path filePath = file.getPath();
+
+				// Secondary indexes have the form <keyspace>-<table>.<index_name>-jb-4-Data.db
+				// while normal files have the form <keyspace>-<table>-jb-4-Data.db .
+				if (filePath.getName().split("\\.").length > 2) {
+					LOG.info("Skipping path " + filePath + " as it appears to be a secondary index");
+					continue;
+				}
+
 				dos.writeBytes(file.getPath().toUri().toString());
 				dos.write('\n');
+				size = size + 1;
 			}
 			dos.close();
-			size = files.size();
 		} else {
 			Utils.copy(new Path(manifestPath), inputPath, false, job.getConfiguration());
 			FileSystem fs = inputPath.getFileSystem(job.getConfiguration());
