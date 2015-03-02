@@ -46,6 +46,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.BytesWritable;
+import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.util.Tool;
@@ -226,6 +227,20 @@ public class Aegisthus extends Configured implements Tool {
         System.out.println(job.getJobID());
         System.out.println(job.getTrackingURL());
         boolean success = job.waitForCompletion(true);
+
+        if (success) {
+            Counter errorCounter = job.getCounters().findCounter("aegisthus", "error_skipped_input");
+            long errorCount = errorCounter != null ? errorCounter.getValue() : 0L;
+            int maxAllowed = job.getConfiguration().getInt(Feature.CONF_MAX_CORRUPT_FILES_TO_SKIP, 0);
+            if (errorCounter != null && errorCounter.getValue() > maxAllowed) {
+                LOG.error("Found {} corrupt files which is greater than the max allowed {}", errorCount, maxAllowed);
+                success = false;
+            } else if (errorCount > 0) {
+                LOG.warn("Found {} corrupt files but not failing the job because the max allowed is {}",
+                        errorCount, maxAllowed);
+            }
+        }
+
         return success ? 0 : 1;
     }
 
@@ -269,9 +284,9 @@ public class Aegisthus extends Configured implements Tool {
          */
         public static final String CONF_MAXCOLSIZE = "aegisthus.maxcolsize";
         /**
-         * Should aegisthus try to skip rows with errors.  Defaults to false.  (untested)
+         * The maximum number of corrupt files that Aegisthus can automatically skip.  Defaults to 0.
          */
-        public static final String CONF_SKIP_ROWS_WITH_ERRORS = "aegisthus.skip_rows_with_errors";
+        public static final String CONF_MAX_CORRUPT_FILES_TO_SKIP = "aegisthus.max_corrupt_files_to_skip";
         /**
          * Sort the columns by name rather than by the order in Cassandra.  This defaults to false.
          */

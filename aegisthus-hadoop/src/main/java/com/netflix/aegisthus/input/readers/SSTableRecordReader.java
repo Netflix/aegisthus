@@ -15,7 +15,6 @@
  */
 package com.netflix.aegisthus.input.readers;
 
-import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.splits.AegSplit;
 import com.netflix.aegisthus.io.sstable.SSTableColumnScanner;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
@@ -25,7 +24,6 @@ import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
-import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import rx.Observable;
@@ -92,20 +90,15 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
             scanner = new SSTableColumnScanner(is, start, end, Descriptor.fromFilename(filename).version);
             LOG.info("Creating observable");
             rx.Observable<AtomWritable> observable = scanner.observable();
-
-            boolean skipRowsWithErrors = ctx.getConfiguration().getBoolean(
-                    Aegisthus.Feature.CONF_SKIP_ROWS_WITH_ERRORS, false);
-            if (skipRowsWithErrors) {
-                observable = observable
-                        .onErrorFlatMap(new Func1<OnErrorThrowable, Observable<? extends AtomWritable>>() {
-                            @Override
-                            public Observable<? extends AtomWritable> call(OnErrorThrowable onErrorThrowable) {
-                                LOG.error("failure deserializing file {}", split.getPath(), onErrorThrowable);
-                                ctx.getCounter("aegisthus", "error_skipped_input").increment(1L);
-                                return Observable.empty();
-                            }
-                        });
-            }
+            observable = observable
+                    .onErrorFlatMap(new Func1<OnErrorThrowable, Observable<? extends AtomWritable>>() {
+                        @Override
+                        public Observable<? extends AtomWritable> call(OnErrorThrowable onErrorThrowable) {
+                            LOG.error("failure deserializing file {}", split.getPath(), onErrorThrowable);
+                            ctx.getCounter("aegisthus", "error_skipped_input").increment(1L);
+                            return Observable.empty();
+                        }
+                    });
 
             iterator = ObservableToIterator.toIterator(observable);
             LOG.info("done initializing");

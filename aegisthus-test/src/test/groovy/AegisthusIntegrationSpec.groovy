@@ -121,7 +121,7 @@ class AegisthusIntegrationSpec extends Specification {
         if (input.forceSplittingInput) {
             aegisthusCommandLine << '-D' << "${Aegisthus.Feature.CONF_BLOCKSIZE}=1024"
         }
-        aegisthusCommandLine << '-D' << "${Aegisthus.Feature.CONF_SKIP_ROWS_WITH_ERRORS}=true"
+        aegisthusCommandLine << '-D' << "${Aegisthus.Feature.CONF_MAX_CORRUPT_FILES_TO_SKIP}=1"
 
         if (input.outputSSTableVersion) {
             aegisthusCommandLine <<
