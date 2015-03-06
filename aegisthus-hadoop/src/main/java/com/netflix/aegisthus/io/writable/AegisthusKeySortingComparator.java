@@ -1,5 +1,6 @@
 package com.netflix.aegisthus.io.writable;
 
+import com.google.common.collect.ComparisonChain;
 import com.netflix.Aegisthus;
 import org.apache.cassandra.db.marshal.AbstractType;
 import org.apache.cassandra.db.marshal.TypeParser;
@@ -38,6 +39,10 @@ public class AegisthusKeySortingComparator extends WritableComparator implements
             nameComparator = new Comparator<ByteBuffer>() {
                 @Override
                 public int compare(ByteBuffer o1, ByteBuffer o2) {
+                    if (o1 == null || o2 == null) {
+                        return ComparisonChain.start().compare(o1, o2).result();
+                    }
+
                     String c1Name = columnNameConverter.getString(o1);
                     String c2Name = columnNameConverter.getString(o2);
                     if (legacyColumnNameFormatting) {

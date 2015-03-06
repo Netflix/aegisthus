@@ -110,11 +110,15 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
             bytes = new byte[length];
             dis.readFully(bytes);
             this.name = ByteBuffer.wrap(bytes);
+        } else {
+            this.name = null;
         }
 
         // Optional timestamp
         if (dis.readBoolean()) {
             this.timestamp = dis.readLong();
+        } else {
+            this.timestamp = null;
         }
     }
 
