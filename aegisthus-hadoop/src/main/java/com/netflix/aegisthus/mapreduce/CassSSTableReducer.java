@@ -88,7 +88,8 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
                 rowReducer.deletedAt = value.getDeletedAt();
             }
 
-            if(rowReducer.getAtomTotalSize() + value.getAtom().serializedSizeForSSTable() > maxRowSize) {
+            if (value.getAtom() != null &&
+                    rowReducer.getAtomTotalSize() + value.getAtom().serializedSizeForSSTable() > maxRowSize) {
                 String formattedKey = rowKeyComparator.getString(ByteBuffer.wrap(rowReducer.key));
                 LOG.warn("Skipping part of row {} that is too big, current size is already {}.",
                         formattedKey, rowReducer.getAtomTotalSize());

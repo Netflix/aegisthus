@@ -110,6 +110,8 @@ public class AtomWritable implements Writable, Configurable {
             this.atom = serializer.deserializeFromSSTable(
                     dis, ColumnSerializer.Flag.PRESERVE_SIZE, Integer.MIN_VALUE, version
             );
+        } else {
+            this.atom = null;
         }
     }
 
