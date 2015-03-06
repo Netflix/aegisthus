@@ -71,8 +71,20 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
     }
 
     public int compareTo(@Nonnull AegisthusKey other, Comparator<ByteBuffer> nameComparator) {
+        // This is a workaround for comparators not handling nulls properly
+        // The case where name or timestamp is null should only happen when there has been a delete
+        int result = this.key.compareTo(other.key);
+        if (result != 0) {
+            return result;
+        }
+
+        if (this.name == null || this.timestamp == null) {
+            return -1;
+        } else if (other.name == null || other.timestamp == null) {
+            return 1;
+        }
+
         return ComparisonChain.start()
-                .compare(this.key, other.key)
                 .compare(this.name, other.name, nameComparator)
                 .compare(this.timestamp, other.timestamp)
                 .result();
