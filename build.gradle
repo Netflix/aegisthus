@@ -3,28 +3,21 @@ buildscript {
         jcenter()
     }
     dependencies {
-        if (!project.hasProperty('buildWithNebulaPlugin')) {
-            classpath 'com.netflix.nebula:gradle-netflixoss-project-plugin:2.2.+'
-        }
         classpath 'com.netflix.nebula:gradle-info-plugin:2.2.+'
     }
 }
 
+plugins {
+    id 'nebula.netflixoss' version '2.2.9'
+}
+
 ext {
     githubProjectName = rootProject.name // Change if github project name is not the same as the root project's name
-    buildWithNebulaPlugin = project.hasProperty('buildWithNebulaPlugin')
     hadoopVersion = project.hasProperty('hadoopVersion') ? hadoopVersion : '2.4.1'
 }
 
-allprojects {
-    if (!buildWithNebulaPlugin) {
-        apply plugin: 'nebula.netflixoss'
-    } else {
-        apply plugin: 'nebula'
-    }
-}
-
 subprojects {
+    apply plugin: 'nebula.netflixoss'
     apply plugin: 'java'
     apply plugin: 'info'
 
@@ -145,10 +138,6 @@ project(':aegisthus-test') {
         exclude '**/*.txt'
         exclude '**/*.sha1'
     }
-}
-
-task wrapper(type: Wrapper) {
-    gradleVersion = '2.2.1'
 }
 
 // include correct hadoop libraries for version
