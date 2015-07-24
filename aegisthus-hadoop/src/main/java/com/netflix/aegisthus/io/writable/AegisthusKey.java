@@ -17,6 +17,7 @@ package com.netflix.aegisthus.io.writable;
 
 import com.google.common.collect.ComparisonChain;
 import org.apache.hadoop.io.WritableComparable;
+import org.apache.hadoop.io.WritableComparator;
 
 import javax.annotation.Nonnull;
 import java.io.DataInput;
@@ -133,6 +134,30 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
             this.timestamp = null;
         }
     }
+
+    /**
+     * Zero copy readFields.
+     * Note: As defensive copying is not done, caller should not mutate b1 while using instance.
+     * */
+    public void readFields(byte[] b1, int s1, int l1) {
+        int keyLength = WritableComparator.readInt(b1, s1);
+        this.key = ByteBuffer.wrap(b1, s1 + 4, keyLength);
+
+        int nameLength = 0;
+        if (b1[s1 + 4 + keyLength] != 0) {
+            nameLength = WritableComparator.readInt(b1, s1 + 4 + keyLength + 1);
+            this.name = ByteBuffer.wrap(b1, s1 + 4 + keyLength + 1 + 4, nameLength);
+        } else {
+            this.name = null;
+        }
+
+        if (b1[s1 + 4 + keyLength + 1 + 4 + nameLength] != 0) {
+            this.timestamp = WritableComparator.readLong(b1, s1 + 4 + keyLength + 1 + 4 + nameLength + 1);
+        } else {
+            this.timestamp = null;
+        }
+    }
+
 
     @Override
     public String toString() {
