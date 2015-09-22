@@ -20,20 +20,19 @@ public class AegisthusKeySortingComparator extends WritableComparator implements
     private boolean legacyColumnNameFormatting;
     private boolean sortColumnsByName;
 
+    private AegisthusKey key1 = new AegisthusKey();
+    private AegisthusKey key2 = new AegisthusKey();
+
     public AegisthusKeySortingComparator() {
-        super(AegisthusKey.class, true);
+        super(AegisthusKey.class, false);
     }
 
     public static String legacyColumnNameFormat(String columnName) {
         return columnName.replaceAll("[\\s\\p{Cntrl}]", " ").replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    @SuppressWarnings("rawtypes")
     @Override
-    public int compare(WritableComparable wc1, WritableComparable wc2) {
-        AegisthusKey ck1 = (AegisthusKey) wc1;
-        AegisthusKey ck2 = (AegisthusKey) wc2;
-
+    public int compare(byte[] b1, int s1, int l1, byte[] b2, int s2, int l2) {
         Comparator<ByteBuffer> nameComparator = columnNameConverter;
         if (sortColumnsByName) {
             nameComparator = new Comparator<ByteBuffer>() {
@@ -54,7 +53,11 @@ public class AegisthusKeySortingComparator extends WritableComparator implements
                 }
             };
         }
-        return ck1.compareTo(ck2, nameComparator);
+
+        key1.readFields(b1, s1, l1);
+        key2.readFields(b2, s2, l2);
+
+        return key1.compareTo(key2, nameComparator);
     }
 
     @Override
