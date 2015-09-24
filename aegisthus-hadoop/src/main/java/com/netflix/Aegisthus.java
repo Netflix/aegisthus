@@ -31,6 +31,7 @@ import com.netflix.aegisthus.output.JsonOutputFormat;
 import com.netflix.aegisthus.output.SSTableOutputFormat;
 import com.netflix.aegisthus.tools.DirectoryWalker;
 import com.netflix.aegisthus.util.CFMetadataUtility;
+import com.netflix.aegisthus.util.JobKiller;
 import org.apache.cassandra.config.CFMetaData;
 import org.apache.cassandra.io.sstable.Descriptor;
 import org.apache.commons.cli.CommandLine;
@@ -174,6 +175,7 @@ public class Aegisthus extends Configured implements Tool {
     @Override
     public int run(String[] args) throws Exception {
         Job job = Job.getInstance(getConf());
+        Configuration configuration = job.getConfiguration();
 
         job.setJarByClass(Aegisthus.class);
         CommandLine cl = getOptions(args);
@@ -189,7 +191,7 @@ public class Aegisthus extends Configured implements Tool {
             }
         }
         if (cl.hasOption(Feature.CMD_ARG_INPUT_DIR)) {
-            paths.addAll(getDataFiles(job.getConfiguration(), cl.getOptionValue(Feature.CMD_ARG_INPUT_DIR)));
+            paths.addAll(getDataFiles(configuration, cl.getOptionValue(Feature.CMD_ARG_INPUT_DIR)));
         }
 
         // At this point we have the version of sstable that we can use for this run
@@ -197,10 +199,10 @@ public class Aegisthus extends Configured implements Tool {
         if (cl.hasOption(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION)) {
             version = new Descriptor.Version(cl.getOptionValue(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION));
         }
-        job.getConfiguration().set(Feature.CONF_SSTABLE_VERSION, version.toString());
+        configuration.set(Feature.CONF_SSTABLE_VERSION, version.toString());
 
-        if (job.getConfiguration().get(Feature.CONF_CQL_SCHEMA) != null) {
-            setConfigurationFromCql(job.getConfiguration());
+        if (configuration.get(Feature.CONF_CQL_SCHEMA) != null) {
+            setConfigurationFromCql(configuration);
         }
 
         job.setInputFormatClass(AegisthusInputFormat.class);
@@ -224,6 +226,10 @@ public class Aegisthus extends Configured implements Tool {
         CustomFileNameFileOutputFormat.setOutputPath(job, new Path(cl.getOptionValue(Feature.CMD_ARG_OUTPUT_DIR)));
 
         job.submit();
+        if (configuration.getBoolean(Feature.CONF_SHUTDOWN_HOOK, true)) {
+            Runtime.getRuntime().addShutdownHook(new JobKiller(job));
+        }
+
         System.out.println(job.getJobID());
         System.out.println(job.getTrackingURL());
         boolean success = job.waitForCompletion(true);
@@ -231,7 +237,7 @@ public class Aegisthus extends Configured implements Tool {
         if (success) {
             Counter errorCounter = job.getCounters().findCounter("aegisthus", "error_skipped_input");
             long errorCount = errorCounter != null ? errorCounter.getValue() : 0L;
-            int maxAllowed = job.getConfiguration().getInt(Feature.CONF_MAX_CORRUPT_FILES_TO_SKIP, 0);
+            int maxAllowed = configuration.getInt(Feature.CONF_MAX_CORRUPT_FILES_TO_SKIP, 0);
             if (errorCounter != null && errorCounter.getValue() > maxAllowed) {
                 LOG.error("Found {} corrupt files which is greater than the max allowed {}", errorCount, maxAllowed);
                 success = false;
@@ -287,6 +293,10 @@ public class Aegisthus extends Configured implements Tool {
          * The maximum number of corrupt files that Aegisthus can automatically skip.  Defaults to 0.
          */
         public static final String CONF_MAX_CORRUPT_FILES_TO_SKIP = "aegisthus.max_corrupt_files_to_skip";
+        /**
+         * Whether to add a shutdown hook to kill the hadoop job.  Defaults to true.
+         */
+        public static final String CONF_SHUTDOWN_HOOK = "aegisthus.shutdown_hook";
         /**
          * Sort the columns by name rather than by the order in Cassandra.  This defaults to false.
          */
