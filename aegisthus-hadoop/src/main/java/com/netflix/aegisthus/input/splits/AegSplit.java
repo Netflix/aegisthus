@@ -47,7 +47,7 @@ public class AegSplit extends InputSplit implements Writable {
         split.start = start;
         split.end = length + start;
         split.hosts = hosts;
-        LOG.info("start: {}, end: {}", start, split.end);
+        LOG.debug("path: {}, start: {}, end: {}", path, start, split.end);
 
         return split;
     }
