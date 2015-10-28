@@ -139,25 +139,33 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
      * Zero copy readFields.
      * Note: As defensive copying is not done, caller should not mutate b1 while using instance.
      * */
-    public void readFields(byte[] b1, int s1, int l1) {
-        int keyLength = WritableComparator.readInt(b1, s1);
-        this.key = ByteBuffer.wrap(b1, s1 + 4, keyLength);
+    public void readFields(byte[] bytes, int start, int length) {
+        int pos = start; // start at the input position
+        int keyLength = WritableComparator.readInt(bytes, pos);
+        pos += 4; // move forward by the int that held the key length
+        this.key = ByteBuffer.wrap(bytes, pos, keyLength);
+        pos += keyLength; // move forward by the key length
 
-        int nameLength = 0;
-        if (b1[s1 + 4 + keyLength] != 0) {
-            nameLength = WritableComparator.readInt(b1, s1 + 4 + keyLength + 1);
-            this.name = ByteBuffer.wrap(b1, s1 + 4 + keyLength + 1 + 4, nameLength);
-        } else {
+        if (bytes[pos] == 0) {
+            pos += 1; // move forward by a boolean
             this.name = null;
+        } else {
+            pos += 1; // move forward by a boolean
+            int nameLength = WritableComparator.readInt(bytes, pos);
+            pos += 4; // move forward by an int that held the name length
+            this.name = ByteBuffer.wrap(bytes, pos, nameLength);
+            pos += nameLength; // move forward by the name length
         }
 
-        if (b1[s1 + 4 + keyLength + 1 + 4 + nameLength] != 0) {
-            this.timestamp = WritableComparator.readLong(b1, s1 + 4 + keyLength + 1 + 4 + nameLength + 1);
-        } else {
+        if (bytes[pos] == 0) {
+            // pos += 1; // move forward by a boolean
             this.timestamp = null;
+        } else {
+            pos += 1; // move forward by a boolean
+            this.timestamp = WritableComparator.readLong(bytes, pos);
+            // pos += 8; // move forward by a long
         }
     }
-
 
     @Override
     public String toString() {
