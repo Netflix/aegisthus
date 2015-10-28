@@ -15,6 +15,7 @@
  */
 package com.netflix;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.netflix.aegisthus.input.AegisthusInputFormat;
@@ -43,8 +44,6 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
-import org.apache.hadoop.fs.FileStatus;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Counter;
@@ -112,20 +111,22 @@ public class Aegisthus extends Configured implements Tool {
     }
 
     List<Path> getDataFiles(Configuration conf, String dir) throws IOException {
-        Set<String> globs = Sets.newHashSet();
-        List<Path> output = Lists.newArrayList();
-        Path dirPath = new Path(dir);
-        FileSystem fs = dirPath.getFileSystem(conf);
-        List<FileStatus> input = Lists.newArrayList(fs.listStatus(dirPath));
-        for (String path : DirectoryWalker.with(conf).threaded().addAllStatuses(input).pathsString()) {
-            if (path.endsWith("-Data.db")) {
-                globs.add(path.replaceAll("[^/]+-Data.db", "*-Data.db"));
+        Set<Path> globs = Sets.newHashSet();
+        Iterable<Path> paths = DirectoryWalker.with(conf)
+                .add(dir)
+                .recursive(true)
+                .omitHidden(true)
+                .manifest(false)
+                .threaded()
+                .paths();
+        for (Path path : paths) {
+            String pathName = path.getName();
+            if (pathName.endsWith("-Data.db")) {
+                Path outputPath = new Path(path.getParent(), pathName.replaceAll("[^/]+-Data.db", "*-Data.db"));
+                globs.add(outputPath);
             }
         }
-        for (String path : globs) {
-            output.add(new Path(path));
-        }
-        return output;
+        return ImmutableList.copyOf(globs);
     }
 
     @SuppressWarnings("static-access")
@@ -193,6 +194,7 @@ public class Aegisthus extends Configured implements Tool {
         if (cl.hasOption(Feature.CMD_ARG_INPUT_DIR)) {
             paths.addAll(getDataFiles(configuration, cl.getOptionValue(Feature.CMD_ARG_INPUT_DIR)));
         }
+        LOG.info("Processing paths: {}", paths);
 
         // At this point we have the version of sstable that we can use for this run
         Descriptor.Version version = Descriptor.Version.CURRENT;
