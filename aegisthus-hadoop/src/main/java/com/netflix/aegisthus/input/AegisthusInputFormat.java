@@ -16,8 +16,14 @@
 package com.netflix.aegisthus.input;
 
 import com.google.common.base.Strings;
+import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
+import com.google.common.util.concurrent.FutureCallback;
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.readers.SSTableRecordReader;
 import com.netflix.aegisthus.input.splits.AegCompressedSplit;
@@ -42,6 +48,11 @@ import java.io.BufferedInputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
+import java.util.Queue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The AegisthusInputFormat class handles creating splits and record readers.
@@ -130,16 +141,53 @@ public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWrit
     }
 
     @Override
-    public List<InputSplit> getSplits(JobContext job) throws IOException {
-        List<FileStatus> files = listStatus(job);
+    public List<InputSplit> getSplits(final JobContext job) throws IOException {
+        // TODO switch to Java 8 and replace this with streams
+        List<FileStatus> allFiles = listStatus(job);
+        List<FileStatus> dataFiles = Lists.newLinkedList();
+        final Queue<InputSplit> allSplits = new ConcurrentLinkedQueue<>();
 
-        List<InputSplit> splits = Lists.newArrayListWithExpectedSize(files.size());
-        for (FileStatus file : files) {
+        for (FileStatus file : allFiles) {
             String name = file.getPath().getName();
             if (name.endsWith("-Data.db")) {
-                splits.addAll(getSSTableSplitsForFile(job, file));
+                dataFiles.add(file);
             }
         }
-        return splits;
+
+        LOG.info("Calculating splits for {} input files of which {} are data files", allFiles.size(), dataFiles.size());
+
+        // TODO make the number of threads configurable
+        ListeningExecutorService service = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(20));
+        for (final FileStatus file : dataFiles) {
+            ListenableFuture<List<InputSplit>> future = service.submit(new Callable<List<InputSplit>>() {
+                public List<InputSplit> call() throws IOException {
+                    List<InputSplit> splitsForFile = getSSTableSplitsForFile(job, file);
+                    LOG.info("Split '{}' into {} splits", file.getPath(), splitsForFile.size());
+
+                    return splitsForFile;
+                }
+            });
+            Futures.addCallback(future, new FutureCallback<List<InputSplit>>() {
+                public void onFailure(Throwable thrown) {
+                    throw Throwables.propagate(thrown);
+                }
+
+                public void onSuccess(List<InputSplit> splits) {
+                    allSplits.addAll(splits);
+                }
+            });
+        }
+
+        try {
+            service.shutdown();
+            // TODO timeout configurable
+            service.awaitTermination(2, TimeUnit.HOURS);
+        } catch (InterruptedException e) {
+            throw Throwables.propagate(e);
+        }
+        ImmutableList<InputSplit> inputSplits = ImmutableList.copyOf(allSplits);
+
+        LOG.info("Split {} input data files into {} parts", dataFiles.size(), inputSplits.size());
+        return inputSplits;
     }
 }
