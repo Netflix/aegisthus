@@ -6,16 +6,21 @@ import java.io.InputStreamReader;
 import java.util.List;
 import java.util.Map;
 
-import org.testng.Assert;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
-
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.tngtech.java.junit.dataprovider.DataProvider;
+import com.tngtech.java.junit.dataprovider.DataProviderRunner;
+import com.tngtech.java.junit.dataprovider.UseDataProvider;
+import org.junit.Assert;
+import org.junit.Ignore;
+import org.junit.Test;
+import org.junit.runner.RunWith;
 
+@RunWith(DataProviderRunner.class)
 public class AegisthusSerializerTest {
 
-	@Test(enabled = false)
+	@Test
+	@Ignore
 	public void agent() throws IOException {
 		BufferedReader br = new BufferedReader(new InputStreamReader(AegisthusSerializerTest.class.getResourceAsStream("/agent.json")));
 		String line = null;
@@ -27,15 +32,16 @@ public class AegisthusSerializerTest {
 		new AegisthusSerializer().deserialize(file.toString());
 	}
 
-	@Test(dataProvider = "json")
+	@Test
+	@UseDataProvider("json")
 	public void deserializeExpire(String value) throws IOException {
 		Map<String, Object> map = new AegisthusSerializer().deserialize(value);
 
 		Assert.assertEquals(AegisthusSerializer.serialize(map), value);
 	}
 
-	@DataProvider()
-	public Object[][] json() {
+	@DataProvider
+	public static Object[][] json() {
 		return new Object[][] { { "{\"556e6b6e6f776e3a3738383838\": {\"deletedAt\": -9223372036854775808, \"columns\": [[\"ticketId\",\"d115046000bd11e1b27112313925158b\",1319735105450,\"e\",604800,1320339905]]}}" },
 								{ "{\"556e6b6e6f776e3a3738383838\": {\"deletedAt\": -9223372036854775808, \"columns\": [[\"\\\\N\",\"d115046000bd11e1b27112313925158b\",1319735105450,\"e\",604800,1320339905]]}}" },
 								{ "{\"556e6b6e6f776e3a3738383838\": {\"deletedAt\": -9223372036854775808, \"columns\": [[\"ticketId\",\"d115046000bd11e1b27112313925158b\",1319735105450,\"c\",604800]]}}" } };
@@ -58,7 +64,8 @@ public class AegisthusSerializerTest {
 		Assert.assertEquals(AegisthusSerializer.serialize(map), value);
 	}
 
-	@Test(dataProvider = "values")
+	@Test
+	@UseDataProvider("values")
 	public void serializeColumns(List<Object> values, String exp) {
 		Map<String, Object> map = Maps.newHashMap();
 		map.put(values.get(0).toString(), values);
@@ -69,8 +76,8 @@ public class AegisthusSerializerTest {
 		Assert.assertEquals(sb.toString(), exp);
 	}
 
-	@DataProvider()
-	public Object[][] values() {
+	@DataProvider
+	public static Object[][] values() {
 		Object[][] ret = new Object[2][2];
 
 		List<Object> values = Lists.newArrayList();

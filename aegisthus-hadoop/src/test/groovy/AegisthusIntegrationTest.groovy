@@ -5,13 +5,21 @@ import groovy.json.JsonSlurper
 import org.apache.hadoop.util.ProgramDriver
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
-import spock.lang.IgnoreRest
 import spock.lang.Specification
 import spock.lang.Unroll
 
-class AegisthusIntegrationSpec extends Specification {
-    private static final Logger LOG = LoggerFactory.getLogger(AegisthusIntegrationSpec)
+@Unroll
+class AegisthusIntegrationTest extends Specification {
+    private static final Logger LOG = LoggerFactory.getLogger(AegisthusIntegrationTest)
     private static final TAB_SPLITTER = Splitter.on('\t').limit(2)
+
+    def setup() {
+        System.setProperty('aegisthus.exit', 'false')
+    }
+
+    def cleanup() {
+        System.setProperty('aegisthus.exit', '')
+    }
 
     private File checkFile(File file) {
         assert file, 'Unable to check null file'
@@ -27,7 +35,7 @@ class AegisthusIntegrationSpec extends Specification {
     }
 
     private File getResourceDirectory(String resource) {
-        URL url = AegisthusIntegrationSpec.getResource(resource)
+        URL url = AegisthusIntegrationTest.getResource(resource)
         assert url, "Unable to locate resource $resource"
         def file = new File(url.toURI())
         checkDirectory(file)
@@ -152,8 +160,7 @@ class AegisthusIntegrationSpec extends Specification {
         return checkFile(actualOutput)
     }
 
-    @Unroll('Read sstables from cassandra and generate aegisthus json output')
-    def 'test sstable to json'() {
+    def 'Generate aegisthus json output from "#inputDirectory"'() {
         when: 'aegisthus is run'
         def actualOutput = runAegisthusAndReturnOutputFile([
                 inputDirectory     : inputDirectory,
@@ -176,8 +183,7 @@ class AegisthusIntegrationSpec extends Specification {
         getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/aeg_json_output"), 'aeg-00000') | true
     }
 
-    @Unroll('Read sstables from cassandra and compact them with aegisthus and generate aegisthus json output from the compacted tables')
-    def 'test sstable to compacted sstable to json'() {
+    def 'Compact tables and generate json output from "#inputDirectory"'() {
         when: 'aegisthus is run'
         def compactedSstableOutput = runAegisthusAndReturnOutputFile([
                 inputDirectory: inputDirectory,
