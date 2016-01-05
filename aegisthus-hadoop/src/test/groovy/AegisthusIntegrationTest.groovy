@@ -59,7 +59,7 @@ class AegisthusIntegrationTest extends Specification {
         return output
     }
 
-    private void compareAegJsonMaps(Map expected, Map actual) {
+    private void compareAegJsonMaps(Map expected, Map actual, boolean ignoreTimestamps) {
         Set<String> expectedKeys = expected.keySet()
         Set<String> actualKeys = actual.keySet()
 
@@ -96,20 +96,24 @@ class AegisthusIntegrationTest extends Specification {
                 List actualColumn = actualColumns.size() > i ? actualColumns[i] as List : []
                 List columnWithData = expectedColumn ?: actualColumn
 
+                if (ignoreTimestamps && expectedColumn.size() >= 3 && actualColumn.size() >= 3) {
+                    actualColumn[2] = expectedColumn[2]
+                }
+
                 LOG.info("Comparing results for key $key column ${columnWithData.first()}")
                 assert expectedColumn == actualColumn
             }
         }
     }
 
-    private void compareAegJsonOutput(File expectedOutput, File actualOutput) {
+    private void compareAegJsonOutput(File expectedOutput, File actualOutput, boolean ignoreTimestamps) {
         checkFile(expectedOutput)
         checkFile(actualOutput)
         LOG.info("(comparing) vimdiff '${expectedOutput.absolutePath}' '${actualOutput.absolutePath}'")
 
         Map expectedJson = convertAegJsonOutputToJson(expectedOutput)
         Map actualJson = convertAegJsonOutputToJson(actualOutput)
-        compareAegJsonMaps(expectedJson, actualJson)
+        compareAegJsonMaps(expectedJson, actualJson, ignoreTimestamps)
     }
 
     private File runAegisthusAndReturnOutputFile(Map input) {
@@ -169,7 +173,7 @@ class AegisthusIntegrationTest extends Specification {
         ])
 
         then: 'and the output should match the expected json output'
-        compareAegJsonOutput(expectedOutput, actualOutput)
+        compareAegJsonOutput(expectedOutput, actualOutput, false)
         // Sanity check that the files are identical
         expectedOutput.text == actualOutput.text
 
@@ -199,7 +203,7 @@ class AegisthusIntegrationTest extends Specification {
         ])
 
         then: 'and the output should match the expected json output'
-        compareAegJsonOutput(expectedOutput, actualOutput)
+        compareAegJsonOutput(expectedOutput, actualOutput, false)
         // Sanity check that the files are identical
         expectedOutput.text == actualOutput.text
 
