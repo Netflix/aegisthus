@@ -87,7 +87,13 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
         LOG.info("End: {}", end);
 
         try {
-            scanner = new SSTableColumnScanner(is, start, end, Descriptor.fromFilename(filename).version);
+            Descriptor.Version version = Descriptor.Version.CURRENT;
+            try {
+                version = Descriptor.fromFilename(filename).version;
+            } catch (Exception ignored) {
+                // The 2.0 fromFilename parser fails on the latest Cassandra filenames, ignore this error and uses latest
+            }
+            scanner = new SSTableColumnScanner(is, start, end, version);
             LOG.info("Creating observable");
             rx.Observable<AtomWritable> observable = scanner.observable();
             observable = observable

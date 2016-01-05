@@ -185,6 +185,8 @@ class AegisthusIntegrationTest extends Specification {
         getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input")      | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')      | false
         getResourceDirectory("/testdata/2.0.10/rangetombstone/input")              | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')              | false
         getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/aeg_json_output"), 'aeg-00000') | true
+        getResourceDirectory("/testdata/2.2.4/randomtable/input")                  | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.2.4/randomtable/aeg_json_output"), 'aeg-00000')                  | true
+        getResourceDirectory("/testdata/2.2.4/rangetombstone/input")               | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.2.4/rangetombstone/aeg_json_output"), 'aeg-00000')               | true
     }
 
     def 'Compact tables and generate json output from "#inputDirectory"'() {
@@ -214,5 +216,7 @@ class AegisthusIntegrationTest extends Specification {
         getResourceDirectory("/testdata/2.0.10/randomtable/input")            | 'jb'                 | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')
         getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input") | 'jb'                 | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')
         getResourceDirectory("/testdata/2.0.10/rangetombstone/input")         | 'jb'                 | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.2.4/randomtable/input")             | 'jb'                 | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.2.4/randomtable/aeg_json_output"), 'aeg-00000')
+        getResourceDirectory("/testdata/2.2.4/rangetombstone/input")          | 'jb'                 | 'aeg-00000'        | new File(getResourceDirectory("/testdata/2.2.4/rangetombstone/aeg_json_output"), 'aeg-00000')
     }
 }
