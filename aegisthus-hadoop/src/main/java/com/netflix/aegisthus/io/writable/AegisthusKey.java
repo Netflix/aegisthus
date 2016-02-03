@@ -16,6 +16,7 @@
 package com.netflix.aegisthus.io.writable;
 
 import com.google.common.collect.ComparisonChain;
+import org.apache.commons.io.Charsets;
 import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.io.WritableComparator;
 
@@ -34,6 +35,7 @@ import java.util.Objects;
  * deleting these.
  */
 public class AegisthusKey implements WritableComparable<AegisthusKey> {
+    private String sourcePath;
     private ByteBuffer key;
     private ByteBuffer name;
     private Long timestamp;
@@ -44,9 +46,10 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
      *
      * @param key the row key
      */
-    public static AegisthusKey createKeyForRow(ByteBuffer key) {
+    public static AegisthusKey createKeyForRow(@Nonnull  ByteBuffer key, @Nonnull  String sourcePath) {
         AegisthusKey aegisthusKey = new AegisthusKey();
         aegisthusKey.key = key;
+        aegisthusKey.sourcePath = sourcePath;
 
         return aegisthusKey;
     }
@@ -56,10 +59,13 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
      *
      * @param key the row key
      */
-    public static AegisthusKey createKeyForRowColumnPair(@Nonnull ByteBuffer key, @Nonnull ByteBuffer name,
-            long timestamp) {
+    public static AegisthusKey createKeyForRowColumnPair(@Nonnull ByteBuffer key,
+                                                         @Nonnull  String sourcePath,
+                                                         @Nonnull ByteBuffer name,
+                                                         long timestamp) {
         AegisthusKey aegisthusKey = new AegisthusKey();
         aegisthusKey.key = key;
+        aegisthusKey.sourcePath = sourcePath;
         aegisthusKey.name = name;
         aegisthusKey.timestamp = timestamp;
 
@@ -68,13 +74,21 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
 
     @Override
     public int compareTo(@Nonnull AegisthusKey other) {
-        return this.key.compareTo(other.key);
+        return ComparisonChain.start()
+                .compare(this.key, other.key)
+                .compare(this.sourcePath, other.sourcePath)
+                .result();
     }
 
     public int compareTo(@Nonnull AegisthusKey other, Comparator<ByteBuffer> nameComparator) {
         // This is a workaround for comparators not handling nulls properly
         // The case where name or timestamp is null should only happen when there has been a delete
         int result = this.key.compareTo(other.key);
+        if (result != 0) {
+            return result;
+        }
+
+        result = this.sourcePath.compareTo(other.sourcePath);
         if (result != 0) {
             return result;
         }
@@ -97,17 +111,24 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         if (obj == null || getClass() != obj.getClass()) {return false;}
         final AegisthusKey other = (AegisthusKey) obj;
         return Objects.equals(this.key, other.key)
+                && Objects.equals(this.sourcePath, other.sourcePath)
                 && Objects.equals(this.name, other.name)
                 && Objects.equals(this.timestamp, other.timestamp);
     }
 
+    @Nonnull
+    public String getSourcePath() {
+        return sourcePath;
+    }
+
+    @Nonnull
     public ByteBuffer getKey() {
         return key;
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(key, name, timestamp);
+        return Objects.hash(key, sourcePath, name, timestamp);
     }
 
     @Override
@@ -117,9 +138,19 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         dis.readFully(bytes);
         this.key = ByteBuffer.wrap(bytes);
 
+        // The (possibly empty) sourcePath
+        length = dis.readInt();
+        if (length > 0) {
+            bytes = new byte[length];
+            dis.readFully(bytes);
+            this.sourcePath = new String(bytes, Charsets.UTF_8);
+        } else {
+            this.sourcePath = "";
+        }
+
         // Optional column name
-        if (dis.readBoolean()) {
-            length = dis.readInt();
+        length = dis.readInt();
+        if (length > 0) {
             bytes = new byte[length];
             dis.readFully(bytes);
             this.name = ByteBuffer.wrap(bytes);
@@ -146,16 +177,23 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         this.key = ByteBuffer.wrap(bytes, pos, keyLength);
         pos += keyLength; // move forward by the key length
 
-        if (bytes[pos] == 0) {
-            pos += 1; // move forward by a boolean
-            this.name = null;
+        int pathLength = WritableComparator.readInt(bytes, pos);
+        pos += 4; // move forward by the int that held the path length
+        if (pathLength > 0) {
+            this.sourcePath = new String(bytes, pos, pathLength, Charsets.UTF_8);
         } else {
-            pos += 1; // move forward by a boolean
-            int nameLength = WritableComparator.readInt(bytes, pos);
-            pos += 4; // move forward by an int that held the name length
-            this.name = ByteBuffer.wrap(bytes, pos, nameLength);
-            pos += nameLength; // move forward by the name length
+            this.sourcePath = "";
         }
+        pos += pathLength; // move forward by the path length
+
+        int nameLength = WritableComparator.readInt(bytes, pos);
+        pos += 4; // move forward by an int that held the name length
+        if (nameLength > 0) {
+            this.name = ByteBuffer.wrap(bytes, pos, nameLength);
+        } else {
+            this.name = null;
+        }
+        pos += nameLength; // move forward by the name length
 
         if (bytes[pos] == 0) {
             // pos += 1; // move forward by a boolean
@@ -181,13 +219,20 @@ public class AegisthusKey implements WritableComparable<AegisthusKey> {
         dos.writeInt(key.array().length);
         dos.write(key.array());
 
+        if (sourcePath.isEmpty()) {
+            dos.writeInt(0);
+        } else {
+            byte[] bytes = sourcePath.getBytes(Charsets.UTF_8);
+            dos.writeInt(bytes.length);
+            dos.write(bytes);
+        }
+
         // Optional column name
-        if (this.name != null) {
-            dos.writeBoolean(true);
+        if (this.name == null) {
+            dos.writeInt(0);
+        } else {
             dos.writeInt(name.array().length);
             dos.write(name.array());
-        } else {
-            dos.writeBoolean(false);
         }
 
         // Optional timestamp

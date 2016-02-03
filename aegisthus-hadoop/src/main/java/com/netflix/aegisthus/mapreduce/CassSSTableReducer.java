@@ -24,11 +24,9 @@ import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.RangeTombstone;
 import org.apache.cassandra.db.marshal.AbstractType;
-import org.apache.cassandra.db.marshal.BytesType;
 import org.apache.cassandra.db.marshal.TypeParser;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.exceptions.SyntaxException;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,7 +36,7 @@ import java.nio.ByteBuffer;
 import java.util.Iterator;
 import java.util.List;
 
-public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, BytesWritable, RowWritable> {
+public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, AegisthusKey, RowWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(CassSSTableReducer.class);
     private long rowsToAddToCounter = 0;
     private AbstractType<?> columnComparator;
@@ -102,8 +100,7 @@ public class CassSSTableReducer extends Reducer<AegisthusKey, AtomWritable, Byte
 
         rowReducer.finalizeReduce();
 
-        BytesWritable bytesWritable = new BytesWritable(key.getKey().array());
-        ctx.write(bytesWritable, RowWritable.createRowWritable(rowReducer.columns, rowReducer.deletedAt));
+        ctx.write(key, RowWritable.createRowWritable(rowReducer.columns, rowReducer.deletedAt));
         updateCounter(ctx, false);
     }
 

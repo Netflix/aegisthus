@@ -15,12 +15,14 @@
  */
 package com.netflix.aegisthus.input.readers;
 
+import com.netflix.Aegisthus;
 import com.netflix.aegisthus.input.splits.AegSplit;
 import com.netflix.aegisthus.io.sstable.SSTableColumnScanner;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AtomWritable;
 import com.netflix.aegisthus.util.ObservableToIterator;
 import org.apache.cassandra.io.sstable.Descriptor;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.InputSplit;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
@@ -34,12 +36,15 @@ import javax.annotation.Nonnull;
 import java.io.IOError;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.Iterator;
 
 public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(SSTableRecordReader.class);
+    private boolean traceDataFromSource;
     private Iterator<AtomWritable> iterator;
+    private String sourcePath;
     private AegisthusKey key;
     private SSTableColumnScanner scanner;
     private AtomWritable value;
@@ -75,14 +80,18 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
     @Override
     public void initialize(@Nonnull InputSplit inputSplit, @Nonnull final TaskAttemptContext ctx)
             throws IOException, InterruptedException {
+        Configuration conf = ctx.getConfiguration();
         final AegSplit split = (AegSplit) inputSplit;
 
         long start = split.getStart();
-        InputStream is = split.getInput(ctx.getConfiguration());
+        InputStream is = split.getInput(conf);
         long end = split.getDataEnd();
-        String filename = split.getPath().toUri().toString();
+        URI fileUri = split.getPath().toUri();
+        String filename = fileUri.toString();
+        sourcePath = fileUri.getPath();
+        traceDataFromSource = conf.getBoolean(Aegisthus.Feature.CONF_TRACE_DATA_FROM_SOURCE, false);
 
-        LOG.info("File: {}", split.getPath().toUri().getPath());
+        LOG.info("File: {}", sourcePath);
         LOG.info("Start: {}", start);
         LOG.info("End: {}", end);
 
@@ -123,11 +132,12 @@ public class SSTableRecordReader extends RecordReader<AegisthusKey, AtomWritable
         if (value.getAtom() != null) {
             key = AegisthusKey.createKeyForRowColumnPair(
                     ByteBuffer.wrap(value.getKey()),
+                    traceDataFromSource ? sourcePath : "",
                     value.getAtom().name(),
                     value.getAtom().maxTimestamp()
             );
         } else {
-            key = AegisthusKey.createKeyForRow(ByteBuffer.wrap(value.getKey()));
+            key = AegisthusKey.createKeyForRow(ByteBuffer.wrap(value.getKey()), traceDataFromSource ? sourcePath : "");
         }
 
         return true;

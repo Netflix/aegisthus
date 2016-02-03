@@ -45,7 +45,6 @@ import org.apache.commons.cli.ParseException;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.conf.Configured;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
@@ -210,7 +209,7 @@ public class Aegisthus extends Configured implements Tool {
         job.setInputFormatClass(AegisthusInputFormat.class);
         job.setMapOutputKeyClass(AegisthusKey.class);
         job.setMapOutputValueClass(AtomWritable.class);
-        job.setOutputKeyClass(BytesWritable.class);
+        job.setOutputKeyClass(AegisthusKey.class);
         job.setOutputValueClass(RowWritable.class);
         job.setMapperClass(AegisthusKeyMapper.class);
         job.setReducerClass(CassSSTableReducer.class);
@@ -315,5 +314,11 @@ public class Aegisthus extends Configured implements Tool {
          * The CQL "Create Table" statement that defines the schema of the input sstables.
          */
         public static final String CONF_CQL_SCHEMA = "aegisthus.cql_schema";
+        /**
+         * When this is enabled, Aegisthus keeps track of which source file all data came from.  When used with
+         * the json output format the filename will be output with the row.  Note: that this is just for debugging,
+         * when enabled rows from different source files will not be combined.  Defaults to false.
+         */
+        public static final String CONF_TRACE_DATA_FROM_SOURCE = "aegisthus.trace_source";
     }
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import com.netflix.Aegisthus;
+import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AegisthusKeySortingComparator;
 import com.netflix.aegisthus.io.writable.RowWritable;
 import org.apache.cassandra.db.Column;
@@ -23,7 +24,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.TaskID;
@@ -36,7 +36,7 @@ import java.text.NumberFormat;
 import java.util.Collections;
 import java.util.List;
 
-public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritable, RowWritable> {
+public class JsonOutputFormat extends CustomFileNameFileOutputFormat<AegisthusKey, RowWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(JsonOutputFormat.class);
     private static final NumberFormat NUMBER_FORMAT = NumberFormat.getInstance();
 
@@ -67,13 +67,14 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
     }
 
     @Override
-    public RecordWriter<BytesWritable, RowWritable> getRecordWriter(final TaskAttemptContext context)
+    public RecordWriter<AegisthusKey, RowWritable> getRecordWriter(final TaskAttemptContext context)
             throws IOException {
         // No extension on the aeg json format files for historical reasons
         Path workFile = getDefaultWorkFile(context, "");
         Configuration conf = context.getConfiguration();
         FileSystem fs = workFile.getFileSystem(conf);
         final long maxColSize = conf.getLong(Aegisthus.Feature.CONF_MAXCOLSIZE, -1);
+        final boolean traceDataFromSource = conf.getBoolean(Aegisthus.Feature.CONF_TRACE_DATA_FROM_SOURCE, false);
         final FSDataOutputStream outputStream = fs.create(workFile, false);
         final JsonFactory jsonFactory = new JsonFactory();
         final AbstractType<ByteBuffer> keyNameConverter = getConverter(conf, Aegisthus.Feature.CONF_KEYTYPE);
@@ -85,7 +86,7 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
         final boolean legacyColumnNameFormatting =
                 conf.getBoolean(Aegisthus.Feature.CONF_LEGACY_COLUMN_NAME_FORMATTING, false);
 
-        return new RecordWriter<BytesWritable, RowWritable>() {
+        return new RecordWriter<AegisthusKey, RowWritable>() {
             private int errorLogCount = 0;
 
             private String getString(AbstractType<ByteBuffer> converter, ByteBuffer buffer) {
@@ -105,13 +106,17 @@ public class JsonOutputFormat extends CustomFileNameFileOutputFormat<BytesWritab
             }
 
             @Override
-            public void write(BytesWritable key, RowWritable rowWritable) throws IOException, InterruptedException {
+            public void write(AegisthusKey key, RowWritable rowWritable) throws IOException, InterruptedException {
                 JsonGenerator jsonGenerator = jsonFactory.createGenerator(outputStream);
                 jsonGenerator.disable(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
 
-                String keyName = getString(keyNameConverter, key.getBytes());
+                String keyName = getString(keyNameConverter, key.getKey().array());
                 outputStream.writeBytes(keyName);
                 outputStream.writeByte('\t');
+                if (traceDataFromSource) {
+                    outputStream.writeBytes(key.getSourcePath());
+                    outputStream.writeByte('\t');
+                }
 
                 jsonGenerator.writeStartObject();
                 jsonGenerator.writeObjectFieldStart(keyName);

@@ -3,6 +3,7 @@ package com.netflix.aegisthus.output;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.netflix.Aegisthus;
+import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.RowWritable;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.io.sstable.Descriptor.Version;
@@ -12,7 +13,6 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.BytesWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.apache.hadoop.mapreduce.TaskID;
@@ -20,7 +20,7 @@ import org.apache.hadoop.mapreduce.TaskID;
 import java.io.IOException;
 import java.text.NumberFormat;
 
-public class SSTableOutputFormat extends CustomFileNameFileOutputFormat<BytesWritable, RowWritable> implements
+public class SSTableOutputFormat extends CustomFileNameFileOutputFormat<AegisthusKey, RowWritable> implements
         Configurable {
     private static final NumberFormat NUMBER_FORMAT = NumberFormat.getInstance();
 
@@ -58,16 +58,16 @@ public class SSTableOutputFormat extends CustomFileNameFileOutputFormat<BytesWri
     }
 
     @Override
-    public RecordWriter<BytesWritable, RowWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
+    public RecordWriter<AegisthusKey, RowWritable> getRecordWriter(TaskAttemptContext context) throws IOException {
         // No extension on the aeg json format files for historical reasons
         Path workFile = getDefaultWorkFile(context, "");
         FileSystem fs = workFile.getFileSystem(context.getConfiguration());
         final FSDataOutputStream fileOut = fs.create(workFile, false);
         final OnDiskAtom.Serializer serializer = OnDiskAtom.Serializer.instance;
 
-        return new RecordWriter<BytesWritable, RowWritable>() {
+        return new RecordWriter<AegisthusKey, RowWritable>() {
             @Override
-            public void write(BytesWritable key, RowWritable rowWritable) throws IOException, InterruptedException {
+            public void write(AegisthusKey key, RowWritable rowWritable) throws IOException, InterruptedException {
                 if (version.hasRowSizeAndColumnCount) {
                     writeVersion_1_2_5(key, rowWritable);
                 } else {
@@ -80,9 +80,10 @@ public class SSTableOutputFormat extends CustomFileNameFileOutputFormat<BytesWri
                 fileOut.close();
             }
 
-            void writeVersion_1_2_5(BytesWritable key, RowWritable row) throws IOException {
-                fileOut.writeShort(key.getLength());
-                fileOut.write(key.getBytes());
+            void writeVersion_1_2_5(AegisthusKey key, RowWritable row) throws IOException {
+                byte[] keyBytes = key.getKey().array();
+                fileOut.writeShort(keyBytes.length);
+                fileOut.write(keyBytes);
 
                 long dataSize = 16; // The bytes for the Int, Long, Int after this loop
                 for (OnDiskAtom atom : row.getColumns()) {
@@ -97,9 +98,10 @@ public class SSTableOutputFormat extends CustomFileNameFileOutputFormat<BytesWri
                 }
             }
 
-            void writeVersion_2_0(BytesWritable key, RowWritable row) throws IOException {
-                fileOut.writeShort(key.getLength());
-                fileOut.write(key.getBytes());
+            void writeVersion_2_0(AegisthusKey key, RowWritable row) throws IOException {
+                byte[] keyBytes = key.getKey().array();
+                fileOut.writeShort(keyBytes.length);
+                fileOut.write(keyBytes);
 
                 fileOut.writeInt((int) (row.getDeletedAt() / 1000));
                 fileOut.writeLong(row.getDeletedAt());
