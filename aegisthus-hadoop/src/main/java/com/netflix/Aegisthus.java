@@ -18,6 +18,7 @@ package com.netflix;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+import com.netflix.aegisthus.input.AegisthusCombinedInputFormat;
 import com.netflix.aegisthus.input.AegisthusInputFormat;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AegisthusKeyGroupingComparator;
@@ -147,6 +148,9 @@ public class Aegisthus extends Configured implements Tool {
         opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_PRODUCE_SSTABLE)
                 .withDescription("produces sstable output (default is to produce json)")
                 .create(Feature.CMD_ARG_PRODUCE_SSTABLE));
+        opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_COMBINE_SPLITS)
+                .withDescription("combine together small input splits (default is to not combine input splits)")
+                .create(Feature.CMD_ARG_COMBINE_SPLITS));
         opts.addOption(OptionBuilder.withArgName(Feature.CMD_ARG_SSTABLE_OUTPUT_VERSION)
                 .withDescription("version of sstable to produce (default is to produce " +
                         Descriptor.Version.current_version
@@ -206,7 +210,11 @@ public class Aegisthus extends Configured implements Tool {
             setConfigurationFromCql(configuration);
         }
 
-        job.setInputFormatClass(AegisthusInputFormat.class);
+        if(cl.hasOption(Feature.CMD_ARG_COMBINE_SPLITS)) {
+            job.setInputFormatClass(AegisthusCombinedInputFormat.class);
+        } else {
+            job.setInputFormatClass(AegisthusInputFormat.class);
+        }
         job.setMapOutputKeyClass(AegisthusKey.class);
         job.setMapOutputValueClass(AtomWritable.class);
         job.setOutputKeyClass(AegisthusKey.class);
@@ -252,6 +260,7 @@ public class Aegisthus extends Configured implements Tool {
     }
 
     public static final class Feature {
+        public static final String CMD_ARG_COMBINE_SPLITS = "combineSplits";
         public static final String CMD_ARG_INPUT_DIR = "inputDir";
         public static final String CMD_ARG_INPUT_FILE = "input";
         public static final String CMD_ARG_OUTPUT_DIR = "output";
@@ -290,6 +299,10 @@ public class Aegisthus extends Configured implements Tool {
          * the columns.
          */
         public static final String CONF_MAXCOLSIZE = "aegisthus.maxcolsize";
+        /**
+         * The maximum number of files that can be combined in a single input split.  Defaults to 200.
+         */
+        public static final String CONF_MAX_COMBINED_SPLITS = "aegisthus.max_combined_splits";
         /**
          * The maximum number of corrupt files that Aegisthus can automatically skip.  Defaults to 0.
          */
