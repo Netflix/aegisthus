@@ -151,6 +151,10 @@ class AegisthusIntegrationTest extends Specification {
             aegisthusCommandLine << '-produceSSTable'
         }
 
+        if (input.containsKey('combineSplits')) {
+            aegisthusCommandLine << '-combineSplits'
+        }
+
         aegisthusCommandLine << '-output' << outdirAbsolutePath
 
         LOG.info("Running aegisthus: {}", aegisthusCommandLine)
@@ -169,7 +173,8 @@ class AegisthusIntegrationTest extends Specification {
         def actualOutput = runAegisthusAndReturnOutputFile([
                 inputDirectory     : inputDirectory,
                 outputFileName     : outputFileName,
-                forceSplittingInput: forceSplittingInput
+                forceSplittingInput: forceSplittingInput,
+                combineSplits: true
         ])
 
         then: 'and the output should match the expected json output'
@@ -183,6 +188,7 @@ class AegisthusIntegrationTest extends Specification {
         getResourceDirectory("/testdata/1.2.18/rangetombstone/input")              | 'aeg-00000'    | new File(getResourceDirectory("/testdata/1.2.18/rangetombstone/aeg_json_output"), 'aeg-00000')              | false
         getResourceDirectory("/testdata/2.0.10/randomtable/input")                 | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/randomtable/aeg_json_output"), 'aeg-00000')                 | true
         getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input")      | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')      | false
+        getResourceDirectory("/testdata/2.0.10_compressed/randomtable/input")      | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_compressed/randomtable/aeg_json_output"), 'aeg-00000')      | true
         getResourceDirectory("/testdata/2.0.10/rangetombstone/input")              | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10/rangetombstone/aeg_json_output"), 'aeg-00000')              | false
         getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/input") | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.0.10_1.2.18_combined/randomtable/aeg_json_output"), 'aeg-00000') | true
         getResourceDirectory("/testdata/2.2.4/randomtable/input")                  | 'aeg-00000'    | new File(getResourceDirectory("/testdata/2.2.4/randomtable/aeg_json_output"), 'aeg-00000')                  | true

@@ -31,6 +31,7 @@ import com.netflix.aegisthus.input.splits.AegSplit;
 import com.netflix.aegisthus.io.sstable.IndexDatabaseScanner;
 import com.netflix.aegisthus.io.writable.AegisthusKey;
 import com.netflix.aegisthus.io.writable.AtomWritable;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.BlockLocation;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -79,17 +80,18 @@ public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWrit
         }
 
         Path path = file.getPath();
-        FileSystem fs = path.getFileSystem(job.getConfiguration());
+        Configuration conf = job.getConfiguration();
+        FileSystem fs = path.getFileSystem(conf);
         BlockLocation[] blkLocations = fs.getFileBlockLocations(file, 0, length);
 
         Path compressionPath = new Path(path.getParent(), path.getName().replaceAll("-Data.db", "-CompressionInfo.db"));
         if (fs.exists(compressionPath)) {
             return ImmutableList.of((InputSplit) AegCompressedSplit.createAegCompressedSplit(path, 0, length,
-                    blkLocations[blkLocations.length - 1].getHosts(), compressionPath));
+                    blkLocations[blkLocations.length - 1].getHosts(), compressionPath, conf));
         }
 
         long blockSize = file.getBlockSize();
-        String aegisthusBlockSize = job.getConfiguration().get(Aegisthus.Feature.CONF_BLOCKSIZE);
+        String aegisthusBlockSize = conf.get(Aegisthus.Feature.CONF_BLOCKSIZE);
         if (!Strings.isNullOrEmpty(aegisthusBlockSize)) {
             blockSize = Long.valueOf(aegisthusBlockSize);
         }

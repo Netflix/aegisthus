@@ -19,54 +19,55 @@ import java.io.InputStream;
 
 public class AegCompressedSplit extends AegSplit {
     private static final Logger LOG = LoggerFactory.getLogger(AegCompressedSplit.class);
-    private Path compressedPath;
-    private CompressionMetadata compressionMetadata = null;
+    private Path compressionMetadataPath;
+    private long compressedLength;
 
-    public static AegCompressedSplit createAegCompressedSplit(@Nonnull Path path,
-            long start,
-            long length,
-            @Nonnull String[] hosts,
-            @Nonnull Path compressedPath) {
+    public static AegCompressedSplit createAegCompressedSplit(@Nonnull Path path, long start, long length,
+            @Nonnull String[] hosts, @Nonnull Path compressionMetadataPath, @Nonnull Configuration conf)
+            throws IOException {
         AegCompressedSplit split = new AegCompressedSplit();
         split.path = path;
         split.start = start;
-        split.end = length + start;
+        split.compressedLength = length;
         split.hosts = hosts;
+        split.compressionMetadataPath = compressionMetadataPath;
+
+        CompressionMetadata compressionMetadata = getCompressionMetadata(conf, compressionMetadataPath, length);
+        split.end = compressionMetadata.getDataLength();
         LOG.info("start: {}, end: {}", start, split.end);
-        split.compressedPath = compressedPath;
 
         return split;
     }
 
-    @Override
-    public long getDataEnd() {
-        if (compressionMetadata == null) {
-            throw new IllegalStateException("getDataEnd was called before getInput");
-        }
-        return compressionMetadata.getDataLength();
+    private static CompressionMetadata getCompressionMetadata(Configuration conf, Path compressionMetadataPath,
+            long compressedLength) throws IOException {
+        FileSystem fs = compressionMetadataPath.getFileSystem(conf);
+        FSDataInputStream cmIn = fs.open(compressionMetadataPath);
+        BufferedInputStream inputStream = new BufferedInputStream(cmIn);
+        CompressionMetadata compressionMetadata = new CompressionMetadata(inputStream, compressedLength);
+
+        return compressionMetadata;
     }
 
     @Nonnull
     @Override
     public InputStream getInput(@Nonnull Configuration conf) throws IOException {
-        FileSystem fs = compressedPath.getFileSystem(conf);
-        InputStream dis = super.getInput(conf);
-        FSDataInputStream cmIn = fs.open(compressedPath);
-        compressionMetadata = new CompressionMetadata(new BufferedInputStream(cmIn), getEnd() - getStart());
-        dis = new CompressionInputStream(dis, compressionMetadata);
-        end = compressionMetadata.getDataLength();
-        return dis;
+        CompressionMetadata compressionMetadata = getCompressionMetadata(conf, compressionMetadataPath,
+                compressedLength);
+        return new CompressionInputStream(super.getInput(conf), compressionMetadata);
     }
 
     @Override
     public void readFields(@Nonnull DataInput in) throws IOException {
         super.readFields(in);
-        compressedPath = new Path(WritableUtils.readString(in));
+        compressionMetadataPath = new Path(WritableUtils.readString(in));
+        compressedLength = WritableUtils.readVLong(in);
     }
 
     @Override
     public void write(@Nonnull DataOutput out) throws IOException {
         super.write(out);
-        WritableUtils.writeString(out, compressedPath.toUri().toString());
+        WritableUtils.writeString(out, compressionMetadataPath.toUri().toString());
+        WritableUtils.writeVLong(out, compressedLength);
     }
 }

@@ -15,11 +15,17 @@
  */
 package com.netflix.aegisthus.input.splits;
 
+import com.google.common.base.Throwables;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import org.apache.hadoop.io.Writable;
+import org.apache.hadoop.io.WritableUtils;
 import org.apache.hadoop.mapreduce.InputSplit;
 
+import javax.annotation.Nonnull;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -27,6 +33,13 @@ import java.util.List;
 import java.util.Set;
 
 public class AegCombinedSplit extends InputSplit implements Writable {
+    private static final LoadingCache<String, Class<AegSplit>> AEG_SPLIT_LOADING_CACHE = CacheBuilder.newBuilder()
+            .build(new CacheLoader<String, Class<AegSplit>>() {
+                @Override
+                public Class<AegSplit> load(@Nonnull String className) throws Exception {
+                    return (Class<AegSplit>) Class.forName(className);
+                }
+            });
     List<AegSplit> splits = Lists.newArrayList();
 
     public AegCombinedSplit() {
@@ -34,11 +47,17 @@ public class AegCombinedSplit extends InputSplit implements Writable {
 
     @Override
     public void readFields(DataInput in) throws IOException {
-        int cnt = in.readInt();
-        for (int i = 0; i < cnt; i++) {
-            AegSplit split = new AegSplit();
-            split.readFields(in);
-            splits.add(split);
+        try {
+            int cnt = in.readInt();
+            for (int i = 0; i < cnt; i++) {
+                String className = WritableUtils.readString(in);
+                AegSplit split = AEG_SPLIT_LOADING_CACHE.get(className).newInstance();
+                split.readFields(in);
+                splits.add(split);
+            }
+        } catch (Throwable t) {
+            Throwables.propagateIfPossible(t, IOException.class);
+            throw new IOException("Unexpected exception", t);
         }
     }
 
@@ -46,6 +65,7 @@ public class AegCombinedSplit extends InputSplit implements Writable {
     public void write(DataOutput out) throws IOException {
         out.writeInt(splits.size());
         for (AegSplit split : splits) {
+            WritableUtils.writeString(out, split.getClass().getCanonicalName());
             split.write(out);
         }
     }
