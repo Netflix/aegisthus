@@ -136,7 +136,7 @@ public class CompressionInputStream extends InputStream {
 
             int size = in.read(checksum, offset, length - offset);
             if (size == -1) {
-                throw new EOFException("encountered EOF while reading checksum. Chunk: " + cm.currentChunk() + ", length: " + cm.currentLength());
+                throw new EOFException("encountered EOF while reading checksum.");
             }
             offset += size;
         }
