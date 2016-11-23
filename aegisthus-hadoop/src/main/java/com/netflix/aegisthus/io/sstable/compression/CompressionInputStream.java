@@ -123,15 +123,23 @@ public class CompressionInputStream extends InputStream {
             offset += size;
         }
         // ignore checksum for now
-        byte[] checksum = new byte[4];
-        int size = in.read(checksum);
-
-        if (size != 4) {
-            throw new EOFException("encountered EOF while reading checksum");
-        }
+        readChecksum(4);
 
         valid = cm.compressor().uncompress(input, 0, length, buffer, 0);
         position = 0;
+    }
+    
+    private void readChecksum(int length) throws IOException {
+        byte[] checksum = new byte[length];
+        int offset = 0;
+        while (offset < length) {
+
+            int size = in.read(checksum, offset, length - offset);
+            if (size == -1) {
+                throw new EOFException("encountered EOF while reading checksum. Chunk: " + cm.currentChunk() + ", length: " + cm.currentLength());
+            }
+            offset += size;
+        }
     }
 
 }
