@@ -32,7 +32,7 @@ public class AegCompressedSplit extends AegSplit {
         split.hosts = hosts;
         split.compressionMetadataPath = compressionMetadataPath;
 
-        CompressionMetadata compressionMetadata = getCompressionMetadata(conf, compressionMetadataPath, length);
+        CompressionMetadata compressionMetadata = getCompressionMetadata(conf, compressionMetadataPath, length, false);
         split.end = compressionMetadata.getDataLength();
         LOG.info("start: {}, end: {}", start, split.end);
 
@@ -40,20 +40,19 @@ public class AegCompressedSplit extends AegSplit {
     }
 
     private static CompressionMetadata getCompressionMetadata(Configuration conf, Path compressionMetadataPath,
-            long compressedLength) throws IOException {
+            long compressedLength, boolean doNonEndCalculations) throws IOException {
         FileSystem fs = compressionMetadataPath.getFileSystem(conf);
-        FSDataInputStream cmIn = fs.open(compressionMetadataPath);
-        BufferedInputStream inputStream = new BufferedInputStream(cmIn);
-        CompressionMetadata compressionMetadata = new CompressionMetadata(inputStream, compressedLength);
-
-        return compressionMetadata;
+        try (FSDataInputStream cmIn = fs.open(compressionMetadataPath);
+                BufferedInputStream inputStream = new BufferedInputStream(cmIn)) {
+            return new CompressionMetadata(inputStream, compressedLength, doNonEndCalculations);
+        }
     }
 
     @Nonnull
     @Override
     public InputStream getInput(@Nonnull Configuration conf) throws IOException {
         CompressionMetadata compressionMetadata = getCompressionMetadata(conf, compressionMetadataPath,
-                compressedLength);
+                compressedLength, true);
         return new CompressionInputStream(super.getInput(conf), compressionMetadata);
     }
 

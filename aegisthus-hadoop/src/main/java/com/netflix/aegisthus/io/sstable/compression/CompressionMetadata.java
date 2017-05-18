@@ -20,7 +20,6 @@ import com.google.common.collect.Maps;
 import org.apache.cassandra.exceptions.ConfigurationException;
 import org.apache.cassandra.io.compress.CompressionParameters;
 import org.apache.cassandra.io.compress.ICompressor;
-import org.apache.cassandra.io.util.FileUtils;
 
 import java.io.DataInput;
 import java.io.DataInputStream;
@@ -35,29 +34,34 @@ public class CompressionMetadata {
     private long dataLength;
     private CompressionParameters parameters;
 
-    public CompressionMetadata(InputStream compressionInput, long compressedLength) throws IOException {
-        DataInputStream stream = new DataInputStream(compressionInput);
+    public CompressionMetadata(InputStream compressionInput, long compressedLength, boolean doNonEndCalculations)
+            throws IOException {
+        try (DataInputStream stream = new DataInputStream(compressionInput)) {
+            String compressorName = stream.readUTF();
+            int optionCount = stream.readInt();
+            Map<String, String> options = Maps.newHashMap();
+            for (int i = 0; i < optionCount; ++i) {
+                String key = stream.readUTF();
+                String value = stream.readUTF();
+                if (doNonEndCalculations) {
+                    options.put(key, value);
+                }
+            }
+            int chunkLength = stream.readInt();
+            if (doNonEndCalculations) {
+                try {
+                    parameters = new CompressionParameters(compressorName, chunkLength, options);
+                } catch (ConfigurationException e) {
+                    throw new RuntimeException("Cannot create CompressionParameters for stored parameters", e);
+                }
+            }
 
-        String compressorName = stream.readUTF();
-        int optionCount = stream.readInt();
-        Map<String, String> options = Maps.newHashMap();
-        for (int i = 0; i < optionCount; ++i) {
-            String key = stream.readUTF();
-            String value = stream.readUTF();
-            options.put(key, value);
+            setDataLength(stream.readLong());
+            if (doNonEndCalculations) {
+                chunkLengths = readChunkLengths(stream, compressedLength);
+            }
+            current = 0;
         }
-        int chunkLength = stream.readInt();
-        try {
-            parameters = new CompressionParameters(compressorName, chunkLength, options);
-        } catch (ConfigurationException e) {
-            throw new RuntimeException("Cannot create CompressionParameters for stored parameters", e);
-        }
-
-        setDataLength(stream.readLong());
-        chunkLengths = readChunkLengths(stream, compressedLength);
-        current = 0;
-
-        FileUtils.closeQuietly(stream);
     }
 
     public int chunkLength() {
