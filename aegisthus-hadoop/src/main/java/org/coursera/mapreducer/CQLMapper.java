@@ -14,18 +14,14 @@ import org.apache.cassandra.cql3.statements.ColumnGroupMap;
 import org.apache.cassandra.db.Column;
 import org.apache.cassandra.db.OnDiskAtom;
 import org.apache.cassandra.db.marshal.*;
-import org.apache.cassandra.utils.ByteBufferUtil;
-import org.apache.hadoop.io.IntWritable;
+import org.apache.cassandra.utils.Pair;
 import org.apache.hadoop.io.NullWritable;
-import org.apache.hadoop.io.WritableComparable;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.sql.Timestamp;
-import java.util.Date;
-import java.util.UUID;
+import java.util.*;
 
 public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, AvroKey<GenericRecord>, NullWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(CQLMapper.class);
@@ -148,12 +144,84 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, AvroKey<Generi
     /* adapted from org.apache.cassandra.cql3.statements.SelectStatement.addValue */
     private void addValue(GenericRecord record, CFDefinition.Name name, ColumnGroupMap group) {
         if (name.type.isCollection()) {
-            // TODO(danchia): support collections
-            throw new RuntimeException("Collections not supported yet.");
+            List<Pair<ByteBuffer, Column>> collection = group.getCollection(name.name.key);
+            ByteBuffer buffer = ((CollectionType)name.type).serialize(collection);
+            addCqlCollectionToRecord(record, name, buffer);
         } else {
             Column c = group.getSimple(name.name.key);
             addCqlValueToRecord(record, name, (c == null) ? null : c.value());
         }
+    }
+
+    private void addCqlCollectionToRecord(GenericRecord record, CFDefinition.Name name, ByteBuffer buffer) {
+        if (name.type instanceof ListType) {
+            AbstractType elementType = ((ListType) name.type).elements;
+            List<?> list = (List<?>) ListType.getInstance(elementType).compose(buffer);
+            if (needTransformRecord(elementType)) {
+                List<Object> resultList = new ArrayList(list.size());
+                for (Object value: list) {
+                    resultList.add(transformValue(elementType, value));
+                }
+                record.put(name.name.toString(), resultList);
+            } else {
+                record.put(name.name.toString(), list);
+            }
+        } else if (name.type instanceof SetType) {
+            AbstractType elementType = ((SetType) name.type).elements;
+            Set<?> set = (Set<?>)SetType.getInstance(elementType).compose(buffer);
+            if (needTransformRecord(elementType)) {
+                Set<Object> resultSet = new HashSet<Object>(set.size());
+                for (Object value: set) {
+                    resultSet.add(transformValue(elementType, value));
+                }
+                record.put(name.name.toString(), resultSet);
+            } else {
+                record.put(name.name.toString(), set);
+            }
+
+        } else if (name.type instanceof MapType) {
+            AbstractType keyType = ((MapType) name.type).keys;
+            AbstractType valueType = ((MapType) name.type).values;
+            Map<?, ?> map = (Map<?, ?>) MapType.getInstance(keyType, valueType).compose(buffer);
+            if (needTransformRecord(valueType)) {
+                Map<Object, Object> resultMap = new HashMap<Object, Object>(map.size());
+                for (Map.Entry entry: map.entrySet()) {
+                    resultMap.put(entry.getKey(), transformValue(valueType, entry.getValue()));
+                }
+                record.put(name.name.toString(), resultMap);
+            } else {
+                record.put(name.name.toString(), map);
+            }
+        }
+    }
+
+    private boolean needTransformRecord(AbstractType type) {
+        AbstractType<?> baseType = (type instanceof ReversedType<?>)
+                ? ((ReversedType<?>) type).baseType
+                : type;
+        return (baseType instanceof UUIDType || baseType instanceof TimeUUIDType ||
+            baseType instanceof BytesType || baseType instanceof TimestampType);
+    }
+
+    /* special case some unsupported CQL3 types to Hive types. */
+    private Object transformValue(AbstractType<?> type, Object valueDeserialized) {
+        AbstractType<?> baseType = (type instanceof ReversedType<?>)
+                ? ((ReversedType<?>) type).baseType
+                : type;
+
+        if (baseType instanceof UUIDType || baseType instanceof TimeUUIDType) {
+            return ((UUID) valueDeserialized).toString();
+        } else if (baseType instanceof BytesType) {
+            ByteBuffer buffer = (ByteBuffer) valueDeserialized;
+            byte[] data = new byte[buffer.remaining()];
+            buffer.get(data);
+
+            return data;
+        } else if (baseType instanceof TimestampType) {
+            Date date = (Date) valueDeserialized;
+            return date.getTime();
+        }
+        return valueDeserialized;
     }
 
     private void addCqlValueToRecord(GenericRecord record, CFDefinition.Name name, ByteBuffer value) {
@@ -169,21 +237,8 @@ public class CQLMapper extends Mapper<AegisthusKey, AtomWritable, AvroKey<Generi
                 ? ((ReversedType<?>) type).baseType
                 : type;
 
-        /* special case some unsupported CQL3 types to Hive types. */
-        if (baseType instanceof UUIDType || baseType instanceof TimeUUIDType) {
-            valueDeserialized = ((UUID) valueDeserialized).toString();
-        } else if (baseType instanceof BytesType) {
-            ByteBuffer buffer = (ByteBuffer) valueDeserialized;
-            byte[] data = new byte[buffer.remaining()];
-            buffer.get(data);
-
-            valueDeserialized = data;
-        } else if (baseType instanceof TimestampType) {
-            Date date = (Date) valueDeserialized;
-            valueDeserialized = date.getTime();
-        }
-
-        //LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
+        valueDeserialized = transformValue(baseType, valueDeserialized);
+        // LOG.info("Setting {} type {} to class {}", name.name.toString(), type, valueDeserialized.getClass());
 
         record.put(name.name.toString(), valueDeserialized);
     }
