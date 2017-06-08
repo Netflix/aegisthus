@@ -15,6 +15,7 @@
  */
 package com.netflix.aegisthus.input;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Strings;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableList;
@@ -54,17 +55,60 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * The AegisthusInputFormat class handles creating splits and record readers.
  */
 public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWritable> {
     private static final Logger LOG = LoggerFactory.getLogger(AegisthusInputFormat.class);
+    private static final Pattern PATH_DATETIME_MATCHER = Pattern.compile(".+/-?\\d+/(\\d{12})/.+");
 
     @Override
     public RecordReader<AegisthusKey, AtomWritable> createRecordReader(InputSplit inputSplit,
             TaskAttemptContext context) throws IOException, InterruptedException {
         return new SSTableRecordReader();
+    }
+
+    /**
+     * Look for a CompressionInfo.db file that matches the given Data.db file.
+     *
+     * @param fs the path file system
+     * @param dataDbPath the reference to a Data.db file
+     * @return an optional CompressionInfo.db file that matches the Data.db file.
+     * @throws IOException on file system errors.
+     */
+    Optional<Path> getCompressionPath(FileSystem fs, Path dataDbPath) throws IOException {
+        final String fullPath = dataDbPath.toString().replaceAll("-Data.db", "-CompressionInfo.db");
+        Path testPath = new Path(fullPath);
+        if (fs.exists(testPath)) {
+            return Optional.of(testPath);
+        }
+
+        // If a CompressionInfo file wasn't found in the same directory, check to see if the path has a date time in it
+        Matcher matcher = PATH_DATETIME_MATCHER.matcher(fullPath);
+        if (!matcher.matches()) {
+            return Optional.absent();
+        }
+
+        // the path looks like it has a date time, we will check the adjacent minutes for the CompressionInfo file also.
+        String dateTime = matcher.group(1);
+        long dateTimeNumeric = Long.valueOf(dateTime);
+
+        // check the next minute
+        testPath = new Path(fullPath.replace("/" + dateTime + "/", "/" + Long.toString(dateTimeNumeric + 1) + "/"));
+        if (fs.exists(testPath)) {
+            return Optional.of(testPath);
+        }
+
+        // check the previous minute
+        testPath = new Path(fullPath.replace("/" + dateTime + "/", "/" + Long.toString(dateTimeNumeric - 1) + "/"));
+        if (fs.exists(testPath)) {
+            return Optional.of(testPath);
+        }
+
+        return Optional.absent();
     }
 
     /**
@@ -84,10 +128,10 @@ public class AegisthusInputFormat extends FileInputFormat<AegisthusKey, AtomWrit
         FileSystem fs = path.getFileSystem(conf);
         BlockLocation[] blkLocations = fs.getFileBlockLocations(file, 0, length);
 
-        Path compressionPath = new Path(path.getParent(), path.getName().replaceAll("-Data.db", "-CompressionInfo.db"));
-        if (fs.exists(compressionPath)) {
+        Optional<Path> compressionPath = getCompressionPath(fs, path);
+        if (compressionPath.isPresent()) {
             return ImmutableList.of((InputSplit) AegCompressedSplit.createAegCompressedSplit(path, 0, length,
-                    blkLocations[blkLocations.length - 1].getHosts(), compressionPath, conf));
+                    blkLocations[blkLocations.length - 1].getHosts(), compressionPath.get(), conf));
         }
 
         long blockSize = file.getBlockSize();
