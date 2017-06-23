@@ -1,6 +1,15 @@
 Aegisthus
 =========
 
+STATUS
+------
+
+Aegisthus has been transitioned to maintenance mode.  It is still used for ETL at Netflix for Cassandra 2.x clusters, 
+but it will not be evolving further.
+
+OVERVIEW
+--------
+
 A Bulk Data Pipeline out of Cassandra.  Aegisthus implements a reader for the 
 SSTable format and provides a map/reduce program to create a compacted snapshot
 of the data contained in a column family.
