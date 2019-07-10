@@ -4,8 +4,7 @@ Aegisthus
 STATUS
 ------
 
-Aegisthus has been transitioned to maintenance mode.  It is still used for ETL at Netflix for Cassandra 2.x clusters, 
-but it will not be evolving further.
+Aegisthus has been archived and will receive no further updates.
 
 OVERVIEW
 --------
